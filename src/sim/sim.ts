@@ -26,7 +26,7 @@ export const MID_Y = 16000;
 export const RIVER_TOP = 15000;
 export const RIVER_BOTTOM = 17000;
 export const BRIDGES = [3500, 14500];
-export const BRIDGE_HALF = 1000;
+export const BRIDGE_HALF = 1600; // wide enough for two tanks to pass each other
 export const LANE_SPLIT_X = 9000;
 
 const PRINCESS = { hp: 1400, damage: 50, hitTicks: 16, range: 7500, radius: 1300 };

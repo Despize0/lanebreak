@@ -4,14 +4,14 @@
 import { CARDS } from "../sim/cards";
 import { Rng } from "../sim/rng";
 import {
-  ARENA_H, ARENA_W, BRIDGES, DEPLOY_TICKS, RIVER_BOTTOM, RIVER_TOP, SPELL_DELAY, canDeployAt, createGame,
+  ARENA_H, ARENA_W, BRIDGES, BRIDGE_HALF, DEPLOY_TICKS, RIVER_BOTTOM, RIVER_TOP, SPELL_DELAY, canDeployAt, createGame,
   type Entity, type GameState, type PlayerId,
 } from "../sim/sim";
 import { sfx } from "./audio";
 import { animFrame, spriteFor } from "./spriteCache";
 import { ANIM_BASE_HEIGHT, animKey } from "./unitAnim";
 import { towerImage } from "./towerSkins";
-import { SPRITE_HEIGHT, type View } from "./unitSprites";
+import { SPRITE_HEIGHT, spriteKey, type View } from "./unitSprites";
 import { BLUE, RED, cardArt, drawFireball, drawKeep, drawLighthouse, drawRubble, drawUnit, type Team } from "./sprites";
 
 export interface Mark { card: string; x: number; y: number; t: number }
@@ -214,7 +214,7 @@ function buildScenery() {
     for (const flipY of [false, true]) {
       const m = (y: number) => (flipY ? ARENA_H - y : y);
       for (const bx of BRIDGES) {
-        ctx2.lineWidth = L(1300 + grow);
+        ctx2.lineWidth = L(1900 + grow);
         ctx2.beginPath();
         [[bx, m(RIVER_BOTTOM + 100)], [bx, m(25500)], [9000, m(29500)]].forEach(([x, y], i) =>
           i ? ctx2.lineTo(SX(x), Y(y)) : ctx2.moveTo(SX(x), Y(y)));
@@ -259,7 +259,7 @@ function buildScenery() {
   const deco = new Rng(7);
   const clear = (x: number, y: number) => {
     if (y > RIVER_TOP - 700 && y < RIVER_BOTTOM + 500) return false;
-    for (const bx of BRIDGES) if (Math.abs(x - bx) < 1100) return false;
+    for (const bx of BRIDGES) if (Math.abs(x - bx) < BRIDGE_HALF + 100) return false;
     for (const [tx, ty] of [[3500, 25500], [14500, 25500], [9000, 29500], [3500, 6500], [14500, 6500], [9000, 2500]]) {
       if ((x - tx) ** 2 + (y - ty) ** 2 < 2600 ** 2) return false;
     }
@@ -317,24 +317,24 @@ function buildScenery() {
     const y1 = RIVER_BOTTOM + 250;
     // shadow on the clouds
     b.fillStyle = "rgba(40,70,110,.18)";
-    b.fillRect(SX(bx - 900), Y(y0 + 200), L(1900), L(y1 - y0));
+    b.fillRect(SX(bx - BRIDGE_HALF + 100), Y(y0 + 200), L(BRIDGE_HALF * 2 - 100), L(y1 - y0));
     for (let y = y0, i = 0; y < y1; y += 290, i++) {
       b.fillStyle = i % 2 ? "#b77d45" : "#c98f55";
-      b.fillRect(SX(bx - 950), Y(y), L(1900), L(220));
+      b.fillRect(SX(bx - BRIDGE_HALF + 50), Y(y), L(BRIDGE_HALF * 2 - 100), L(220));
       b.fillStyle = "rgba(60,35,15,.35)";
-      b.fillRect(SX(bx - 950), Y(y + 180), L(1900), L(40));
+      b.fillRect(SX(bx - BRIDGE_HALF + 50), Y(y + 180), L(BRIDGE_HALF * 2 - 100), L(40));
     }
     b.strokeStyle = "#6b4523";
     b.lineWidth = Math.max(1.5, L(80));
     for (const side of [-1, 1]) {
       b.beginPath();
-      b.moveTo(SX(bx + side * 960), Y(y0));
-      b.quadraticCurveTo(SX(bx + side * 1080), Y((y0 + y1) / 2), SX(bx + side * 960), Y(y1));
+      b.moveTo(SX(bx + side * (BRIDGE_HALF - 40)), Y(y0));
+      b.quadraticCurveTo(SX(bx + side * (BRIDGE_HALF + 80)), Y((y0 + y1) / 2), SX(bx + side * (BRIDGE_HALF - 40)), Y(y1));
       b.stroke();
       for (const py of [y0, y1]) {
         b.fillStyle = "#7a4f28";
         b.beginPath();
-        b.arc(SX(bx + side * 1000), Y(py), Math.max(2, L(150)), 0, Math.PI * 2);
+        b.arc(SX(bx + side * BRIDGE_HALF), Y(py), Math.max(2, L(150)), 0, Math.PI * 2);
         b.fill();
         b.strokeStyle = "#4a2f17";
         b.lineWidth = Math.max(1, L(40));
@@ -741,7 +741,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   // the painted back view when heading away from the viewer, walk frame 0 when standing
   const key = animKey(e.card, e.id);
   const attacking = !!la && atk < 0.75;
-  const useAnim = !STATIC_ART.has(e.card);
+  const useAnim = FRAME_ANIM.has(e.card);
   let cv: HTMLCanvasElement | null = null;
   let pad = 0;
   let anchor = 0; // feet x inside cv
@@ -774,7 +774,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
     }
   }
   if (!cv) {
-    const frame = spriteFor(e.card, dir, face as 1 | -1, team);
+    const frame = spriteFor(spriteKey(e.card, e.id), dir, face as 1 | -1, team);
     if (frame) {
       cv = frame.canvas;
       pad = frame.pad;
@@ -809,7 +809,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   }
   const w = cv.width * k;
   const fullH = cv.height * k;
-  const walk = moving && !e.flying ? p_walk(t, e.id) : 0;
+  const walk = moving && !e.flying ? p_walk(t * Math.max(0.6, (e.speed || 50) / 50), e.id) : 0;
   const bob = -Math.abs(walk) * r * (animated ? 0.04 : 0.12);
   const tilt = animated ? 0 : moving ? walk * 0.06 : e.flying ? Math.sin(t * 2.5 + e.id) * 0.05 : 0;
   const squash = !animated && atk < 0.25 ? Math.sin((atk / 0.25) * Math.PI) : 0;
@@ -842,8 +842,8 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   }
 }
 
-/** Units drawn from their single painted views instead of the animation sheet. */
-const STATIC_ART = new Set(["bombardier", "ironhide"]);
+/** Units still drawn from walk/attack frames; everyone else uses the sharper painted views + procedural motion. */
+const FRAME_ANIM = new Set(["swarmlings"]);
 
 const p_walk = (t: number, id: number) => Math.sin(t * 10 + id * 1.7);
 

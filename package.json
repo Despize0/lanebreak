@@ -1,6 +1,6 @@
 {
   "name": "lanebreak",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "private": true,
   "description": "Real-time lane card battler: deterministic shared simulation, browser client, AI opponent.",
   "type": "module",

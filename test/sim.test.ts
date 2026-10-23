@@ -145,3 +145,35 @@ test("troops placed behind towers walk around them and reach the bridge", () => 
     }
   }
 });
+
+test("two pairs of big units meeting head-on on a bridge don't jam", () => {
+  const big = ["colossus", "ironhide", "brute", "warden"];
+  const deck = (cs: string[]) => [...cs, ...["zap", "wisps", "cannon", "ember", "skywing", "swarmlings", "bulwark", "sparkcaster"].filter((k) => !cs.includes(k))].slice(0, 8);
+  for (const [a, a2] of [["colossus", "ironhide"], ["ironhide", "colossus"]]) {
+    for (const b of big) for (const b2 of big) {
+      if (b === b2) continue;
+      for (const lx of [3500, 14500]) {
+        const s = createGame(5, [deck([a, a2]), deck([b, b2])]);
+        s.players[0].elixir = 20 * ELIXIR_UNIT;
+        s.players[1].elixir = 20 * ELIXIR_UNIT;
+        s.players[0].hand[0] = a; s.players[0].hand[1] = a2;
+        s.players[1].hand[0] = b; s.players[1].hand[1] = b2;
+        step(s, [
+          { tick: 0, player: 0, card: a, x: lx - 400, y: 19500 },
+          { tick: 0, player: 0, card: a2, x: lx + 400, y: 20500 },
+          { tick: 0, player: 1, card: b, x: lx + 300, y: 12500 },
+          { tick: 0, player: 1, card: b2, x: lx - 300, y: 11500 },
+        ]);
+        const over = new Set<number>();
+        let done = false;
+        for (let t = 0; t < 2000 && !done; t++) {
+          step(s);
+          const mine = s.entities.filter((e) => e.kind === "troop" && big.includes(e.card));
+          for (const e of mine) if (e.owner === 0 ? e.y < 15000 : e.y > 17000) over.add(e.id);
+          done = s.winner !== null || mine.every((e) => over.has(e.id));
+        }
+        assert.ok(done, `${a}+${a2} vs ${b}+${b2} at x ${lx} jammed on the bridge`);
+      }
+    }
+  }
+});
