@@ -54,7 +54,7 @@ export const UNIT_SPRITES: Record<string, Partial<Record<View, string>>> = {
 
 /** Which way each unit's side view faces in the source art (1 = right, -1 = left). */
 export const SIDE_FACES: Record<string, 1 | -1> = {
-  ironhide: -1, colossus: -1, skyrider: 1, brute: -1, warden: 1, ranger: 1, twinrangers: 1,
+  ironhide: 1, colossus: -1, skyrider: 1, brute: -1, warden: 1, ranger: 1, twinrangers: 1,
   sparkcaster: 1, bombardier: -1, swarmlings: 1,
 };
 

@@ -843,7 +843,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
 }
 
 /** Units drawn from their single painted views instead of the animation sheet. */
-const STATIC_ART = new Set(["bombardier"]);
+const STATIC_ART = new Set(["bombardier", "ironhide"]);
 
 const p_walk = (t: number, id: number) => Math.sin(t * 10 + id * 1.7);
 
