@@ -8,6 +8,7 @@
 //    state is identical to the server's. They report hashes; the server checks them.
 
 import type { PlayerId } from "../sim/sim";
+import type { PlayerInfo, PublicUser } from "./tiers";
 
 /** [player, card, x, y] — compact input inside a frame */
 export type WireInput = [PlayerId, string, number, number];
@@ -15,7 +16,8 @@ export type WireInput = [PlayerId, string, number, number];
 export type LogEntry = [number, PlayerId, string, number, number];
 
 export type ClientMsg =
-  | { t: "queue" }
+  | { t: "auth"; token: string }
+  | { t: "queue"; ranked: boolean }
   | { t: "create" }
   | { t: "join"; code: string }
   | { t: "rejoin"; code: string; token: string }
@@ -25,13 +27,20 @@ export type ClientMsg =
   | { t: "ping"; n: number };
 
 export type ServerMsg =
-  | { t: "queued" }
+  | { t: "me"; user: PublicUser | null }
+  | { t: "queued"; ranked: boolean }
   | { t: "room"; code: string }
-  | { t: "start"; code: string; token: string; you: PlayerId; seed: number; tick: number; log: LogEntry[] }
+  | {
+      t: "start"; code: string; token: string; you: PlayerId; seed: number; tick: number; log: LogEntry[];
+      ranked: boolean; players: [PlayerInfo, PlayerInfo];
+    }
   | { t: "f"; k: number; i?: WireInput[] }
   | { t: "rej"; reason: string }
   | { t: "opp"; status: "disconnected" | "reconnected" }
-  | { t: "end"; winner: PlayerId | -1; crowns: [number, number]; hash: number; reason: "towers" | "forfeit" }
+  | {
+      t: "end"; winner: PlayerId | -1; crowns: [number, number]; hash: number; reason: "towers" | "forfeit";
+      ratings?: [[number, number], [number, number]]; // per seat: [before, after], ranked only
+    }
   | { t: "sync"; seed: number; tick: number; log: LogEntry[] }
   | { t: "err"; msg: string }
   | { t: "pong"; n: number };

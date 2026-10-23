@@ -13,7 +13,8 @@ let server: ChildProcess;
 
 before(async () => {
   server = spawn(process.execPath, ["--import", "tsx", "src/server/server.ts"], {
-    env: { ...process.env, PORT: String(PORT), LB_TEST_SPEED: "20" },
+    // TEST_DATABASE_URL=postgres://... runs the suite against real Postgres; otherwise in-memory
+    env: { ...process.env, PORT: String(PORT), LB_TEST_SPEED: "20", DATABASE_URL: process.env.TEST_DATABASE_URL ?? "" },
     stdio: ["ignore", "pipe", "inherit"],
   });
   await new Promise<void>((resolve, reject) => {
@@ -42,6 +43,8 @@ class Client {
   rejects: string[] = [];
   errors: string[] = [];
   end: Extract<ServerMsg, { t: "end" }> | null = null;
+  start: Extract<ServerMsg, { t: "start" }> | null = null;
+  user: any = undefined;
   bot: Bot | null = null;
   onTick: ((c: Client) => void) | null = null;
   constructor(public useBot = true) {}
@@ -64,7 +67,11 @@ class Client {
   }
   onMsg(m: ServerMsg) {
     switch (m.t) {
+      case "me":
+        this.user = m.user;
+        break;
       case "start":
+        this.start = m;
         this.me = m.you;
         this.code = m.code;
         this.token = m.token;
@@ -227,4 +234,122 @@ test("a tampered client state gets corrected by the server", async () => {
   a.send({ t: "leave" });
   a.ws.close();
   b.ws.close();
+});
+
+// ------------------------------------------------------------------ accounts + ranked
+const HTTP = `http://127.0.0.1:${PORT}`;
+const uniq = () => Math.random().toString(36).slice(2, 8);
+async function post(path: string, body: unknown, token?: string) {
+  const r = await fetch(HTTP + path, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  return { status: r.status, body: await r.json() };
+}
+async function get(path: string, token?: string) {
+  const r = await fetch(HTTP + path, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  return { status: r.status, body: await r.json() };
+}
+
+test("accounts: register, login, bad input, sessions", async () => {
+  const name = `t_${uniq()}`;
+  const reg = await post("/api/register", { username: name, password: "correct horse" });
+  assert.equal(reg.status, 200);
+  assert.equal(reg.body.user.name, name);
+  assert.equal(reg.body.user.rating, 1500);
+  assert.equal(reg.body.user.tier, "Unranked");
+  assert.equal((await post("/api/register", { username: name.toUpperCase(), password: "whatever123" })).status, 409, "names are case-insensitive");
+  assert.equal((await post("/api/register", { username: "x", password: "longenough" })).status, 400);
+  assert.equal((await post("/api/register", { username: `ok_${uniq()}`, password: "short" })).status, 400);
+  assert.equal((await post("/api/register", { username: "admin", password: "longenough" })).status, 400);
+  assert.equal((await post("/api/login", { username: name, password: "wrong password" })).status, 401);
+  assert.equal((await post("/api/login", { username: "nobody_" + uniq(), password: "whatever123" })).status, 401);
+  const login = await post("/api/login", { username: name, password: "correct horse" });
+  assert.equal(login.status, 200);
+  const me = await get("/api/me", login.body.token);
+  assert.equal(me.body.user.name, name);
+  assert.ok(!("passwordHash" in me.body.user));
+  await post("/api/logout", {}, login.body.token);
+  assert.equal((await get("/api/me", login.body.token)).status, 401, "logout kills the session");
+  assert.equal((await get("/api/me", "garbage-token-value")).status, 401);
+});
+
+async function authedClient(useBot = true) {
+  const name = `p_${uniq()}`;
+  const reg = await post("/api/register", { username: name, password: "password123" });
+  const c = new Client(useBot);
+  await c.connect();
+  c.send({ t: "auth", token: reg.body.token });
+  await c.waitFor(() => c.user !== undefined, 5000);
+  return { c, name, token: reg.body.token as string };
+}
+
+test("ranked: guests are refused, one search per account", async () => {
+  const guest = new Client(false);
+  await guest.connect();
+  guest.send({ t: "queue", ranked: true });
+  await guest.waitFor(() => guest.errors.includes("Sign in to play ranked"), 5000);
+  const { c, token } = await authedClient(false);
+  const tab2 = new Client(false);
+  await tab2.connect();
+  tab2.send({ t: "auth", token });
+  await tab2.waitFor(() => tab2.user !== undefined, 5000);
+  c.send({ t: "queue", ranked: true });
+  await new Promise((r) => setTimeout(r, 100));
+  tab2.send({ t: "queue", ranked: true });
+  await tab2.waitFor(() => tab2.errors.some((e) => e.includes("already searching")), 5000);
+  c.send({ t: "leave" });
+  guest.ws.close();
+  c.ws.close();
+  tab2.ws.close();
+});
+
+test("ranked: full match updates ratings, history and leaderboard", async () => {
+  const A = await authedClient();
+  const B = await authedClient();
+  A.c.send({ t: "queue", ranked: true });
+  B.c.send({ t: "queue", ranked: true });
+  await A.c.waitFor(() => !!A.c.end && !!B.c.end, 90000);
+  assert.equal(A.c.start!.ranked, true);
+  const names = A.c.start!.players.map((p) => p.name).sort();
+  assert.deepEqual(names, [A.name, B.name].sort());
+  const end = A.c.end!;
+  assert.ok(end.ratings, "ranked end includes rating changes");
+  const [r0, r1] = end.ratings!;
+  if (end.winner === 0) assert.ok(r0[1] > r0[0] && r1[1] < r1[0]);
+  else if (end.winner === 1) assert.ok(r1[1] > r1[0] && r0[1] < r0[0]);
+  // both start at 1500 with high uncertainty: a single game moves ratings a lot
+  assert.ok(Math.abs(r0[1] - r0[0]) > 100);
+  // the server pushes the updated profile
+  await A.c.waitFor(() => A.c.user?.games === 1, 5000);
+  const prof = await get(`/api/players/${A.name}`);
+  assert.equal(prof.status, 200);
+  assert.equal(prof.body.recent.length, 1);
+  assert.equal(prof.body.recent[0].ranked, true);
+  assert.equal(prof.body.user.tier, "Unranked", "still in placements after 1 game");
+  const board = await get("/api/leaderboard", A.token);
+  assert.equal(board.status, 200);
+  assert.ok(Array.isArray(board.body.players));
+  assert.equal(board.body.you.name, A.name);
+  // the stored record replays to the same result
+  const rec = await get(`/api/matches/${A.c.code}`);
+  const inputs = (rec.body.log as LogEntry[]).map(([tick, player, card, x, y]) => ({ tick, player, card, x, y }));
+  assert.equal(hashState(replay(rec.body.seed, inputs).state), rec.body.hash);
+  A.c.ws.close();
+  B.c.ws.close();
+});
+
+test("casual matches never change ratings", async () => {
+  const A = await authedClient();
+  const B = await authedClient();
+  A.c.send({ t: "queue", ranked: false });
+  B.c.send({ t: "queue", ranked: false });
+  await A.c.waitFor(() => !!A.c.end && !!B.c.end, 90000);
+  assert.equal(A.c.end!.ratings, undefined);
+  const me = await get("/api/me", A.token);
+  assert.equal(me.body.user.rating, 1500);
+  assert.equal(me.body.user.games, 0);
+  A.c.ws.close();
+  B.c.ws.close();
 });

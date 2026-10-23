@@ -1,19 +1,20 @@
-# Lanebreak (prototype v0.2)
+# Lanebreak (prototype v0.3)
 
-Real-time lane card battler with online 1v1. A deterministic game simulation runs on the server
-(the real match) and in each browser (to draw it). Practice mode against a bot works offline.
-No accounts, no money yet.
+Real-time lane card battler on floating sky islands. Online 1v1 (ranked, casual, friends),
+accounts with Glicko-2 ratings, a leaderboard, and practice against a bot. A deterministic
+simulation runs on the server (the real match) and in each browser (to draw it).
 
 ## Run it locally
 
 ```bash
 npm install
-npm test          # rules, determinism, anti-cheat, and live online tests
+npm test          # rules, ratings, determinism, anti-cheat, accounts, live online tests
 npm run dev       # builds and starts the server on http://localhost:8080
 ```
 
-Open http://localhost:8080 in two browser windows (or two devices on your Wi-Fi) and click
-**Find match** in both, or **Play a friend** in one and open the invite link in the other.
+Without `DATABASE_URL` the server keeps accounts in memory (fine for local testing, wiped on restart).
+To test against Postgres: `DATABASE_URL=postgres://user:pass@localhost:5432/db npm run dev`,
+and `TEST_DATABASE_URL=... npm test` runs the online tests against it.
 
 `npm run sim -- 200` plays 200 bot-vs-bot matches and prints the win split, card usage and sim speed.
 
@@ -21,54 +22,50 @@ Requires Node 20+.
 
 ## Deploy on Railway
 
-1. Push this folder to a new GitHub repo.
-2. In Railway: **New Project → Deploy from GitHub repo** and pick it.
-   Railway runs `npm install`, `npm run build`, then `npm start` on its own.
-3. In the service: **Settings → Networking → Generate Domain**.
-4. Open that domain. Share links look like `https://<your-domain>/?room=ABCDE`.
+1. In the Railway project: **+ Create → Database → PostgreSQL**.
+2. Open the **lanebreak** service → **Variables** → **+ New Variable** → **Add Reference** →
+   pick `DATABASE_URL` from the Postgres service. Railway redeploys.
+3. Check `https://<your-domain>/health` says `"database":"postgres"`.
 
-Keep it at **one replica**: live matches live in the server's memory. Redeploying ends any matches
-in progress, so deploy when nobody is playing. Do not set `LB_TEST_SPEED` (tests only).
+The server creates its tables on startup. Keep the service at **one replica** (live matches are in
+memory). Redeploying ends matches in progress. Never set `LB_TEST_SPEED` (tests only).
 
-Useful endpoints: `/health`, `/api/stats` (live matches, queue size), `/api/matches/<CODE>`
-(seed + full input log of a finished match, enough to replay it exactly).
+Endpoints: `/health`, `/api/stats`, `/api/leaderboard`, `/api/players/<name>`, `/api/matches/<CODE>`
+(seed + input log of a finished match, enough to replay it exactly).
 
 ## Layout
 
 ```
-src/sim/sim.ts       the whole game rules engine (runs on server AND client)
-src/sim/cards.ts     the 8 original cards and their stats; tune balance here
-src/sim/rng.ts       seeded RNG (the sim never uses Math.random)
-src/ai/bot.ts        practice opponent; sends inputs exactly like a player would
-src/net/protocol.ts  every message the client and server can send
-src/server/server.ts match server: queue, private rooms, game loop, reconnects
-src/client/          browser page, renderer, touch controls
-test/                sim tests + end-to-end online tests (real server, real sockets)
+src/sim/          rules engine (sim.ts), cards, seeded RNG — shared by server and client
+src/ai/bot.ts     practice opponent; sends inputs exactly like a player would
+src/net/          wire protocol + ranked tiers (shared)
+src/server/       server.ts (rooms, queues, game loop, HTTP API), store.ts (Postgres / memory),
+                  auth.ts (scrypt passwords, sessions), glicko.ts (ratings)
+src/client/       main.ts (flow + networking), render.ts (sky islands, effects), sprites.ts
+                  (procedural characters), audio.ts (synth sounds), account.ts (sign-in, leaderboard)
+test/             sim, rating, and end-to-end online tests
 ```
 
-## How online play works
+## Ranked
 
-- The server owns the match. Each 1/20s it applies the inputs it received, steps the sim, and
-  sends both players a frame: the tick number plus those inputs.
-- Clients only ever send "play card X at tile (x, y)". They never send positions, damage or elixir.
-  The server's sim rejects anything illegal: card not in hand, not enough elixir, wrong side,
-  non-integer or out-of-bounds coordinates. Messages are size-capped and rate-limited.
-- Clients run the same deterministic sim on the frames, so their screen matches the server exactly.
-  Every 100 ticks each client reports a state hash. If it differs (a bug or a tampered client),
-  the server sends the full log and the client rebuilds the real state.
-- Disconnects: the match keeps running; the player has 20 seconds to come back (refreshing the page
-  rejoins automatically). After that it's a forfeit. Leaving the match is a resignation.
-- Every finished match is stored with its seed and input log, so the result can be re-simulated
-  and checked by anyone. Both clients also do this at the end and show "Matches server result".
+- Glicko-2 ratings, starting at 1500. New players' ratings move fast (high uncertainty) and settle
+  as they play; uncertainty grows again after time away.
+- 5 placement matches, then a tier: Breeze < 1300 ≤ Gale < 1500 ≤ Storm < 1700 ≤ Thunder < 1900 ≤
+  Tempest < 2100 ≤ Skyborn.
+- Matchmaking pairs the closest ratings; the allowed gap starts at ±100 and widens while waiting.
+- One live match and one ranked search per account. Leaving or staying disconnected for 20s is a loss.
+  A match where both players vanish is voided (no rating change).
+- Casual and friend matches never change ratings.
+
+## Security notes
+
+- Passwords: scrypt with per-user salt. Sessions: random 256-bit tokens; only their SHA-256 is stored.
+- Login/sign-up are rate limited per IP and per username; unknown users take as long as wrong passwords.
+- Clients only send "play card X at tile (x, y)"; the server's sim validates every move. Messages are
+  size-capped and rate-limited, and every 100 ticks clients prove their state matches the server's.
 
 ## Rules in this version
 
-3:00 regulation, double elixir in the last minute, 1:00 sudden death, then a tiebreak on the
+3:00 regulation, double aether in the last minute, 1:00 sudden death, then a tiebreak on the
 weakest remaining tower. Destroying a side tower unlocks deploys in that lane on the enemy side.
-King tower wakes up when hit or when a side tower falls. Both players get the same card order.
-
-## Next steps
-
-1. Accounts, Glicko-2 ranked queue, leaderboard (needs a database).
-2. Persist match records to the database instead of memory.
-3. Cash mode only after anti-cheat is proven and the legal/payment structure is approved.
+The king's keep wakes up when hit or when a side tower falls. Both players get the same card order.

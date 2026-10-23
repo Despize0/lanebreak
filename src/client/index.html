@@ -2,192 +2,281 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Saira+Condensed:wght@500;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Baloo+2:wght@500;700;800&display=swap">
 <style>
-/* Layout: one-screen portrait game. Scoreboard strip / arena canvas / hand + elixir tray. */
-/* Single committed look (a slate war-table), so colors are set explicitly for both host themes. */
+/* Layout: one-screen portrait game. Scoreboard strip / sky-island arena / hand + aether tray.
+   Single committed look (dusk sky), so colors are set explicitly for both host themes. */
 :root {
-  --ink: #141a24;        /* tray + overlays */
-  --ink-2: #1f2735;      /* raised tray elements */
-  --line: #34405a;
-  --text: #e9edf4;
-  --muted: #9aa6bd;
-  --blue: #3d7bf2;       /* you */
-  --red: #e5533d;        /* opponent */
-  --elixir: #c04ad9;
-  --gold: #f2c14e;
-  --field-a: #6f8a5b;
-  --field-b: #678352;
-  --river: #2c6f86;
-  --bridge: #a07a4f;
-  --font-display: "Saira Condensed", "Arial Narrow", system-ui, sans-serif;
-  --font-num: "Chakra Petch", ui-monospace, "SFMono-Regular", monospace;
+  --night: #141a33;      /* tray, overlays */
+  --night-2: #1f2850;    /* raised elements */
+  --night-3: #2b376a;
+  --line: #3d4b85;
+  --text: #f4f6ff;
+  --muted: #a9b3da;
+  --blue: #2f9bff;       /* you */
+  --blue-deep: #1a5fc2;
+  --red: #ff5b4f;        /* rival */
+  --gold: #ffc94a;
+  --aether: #b65cff;
+  --good: #6fe39a;
+  --font-display: "Lilita One", "Arial Black", system-ui, sans-serif;
+  --font-ui: "Baloo 2", "Trebuchet MS", system-ui, sans-serif;
   color-scheme: dark;
 }
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
-body { background: var(--ink); color: var(--text); font-family: var(--font-display); overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+body { background: radial-gradient(120% 70% at 50% 0%, #2a3a7a 0%, var(--night) 70%); background-color: var(--night); color: var(--text); font-family: var(--font-ui); overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+button, input { font-family: inherit; }
 #app {
   height: 100%; display: flex; flex-direction: column; gap: 8px; box-sizing: border-box;
-  max-width: 560px; margin: 0 auto;
-  padding-block: 8px;
+  max-width: 560px; margin: 0 auto; padding-block: 8px;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
+
+/* ---------- scoreboard */
 .score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
-.side { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; min-width: 0; }
+.side { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .side.them { justify-content: flex-end; }
-.side .name { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.crowns { display: flex; gap: 3px; }
-.crowns i { width: 14px; height: 11px; display: block; background: var(--line);
+.side .who { display: flex; flex-direction: column; min-width: 0; line-height: 1.05; }
+.side.them .who { align-items: flex-end; }
+.side .name { font-family: var(--font-display); font-size: 16px; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.side .sub { font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.you .name { color: #bfe0ff; }
+.them .name { color: #ffc4bd; }
+.crowns { display: flex; gap: 2px; flex: 0 0 auto; }
+.crowns i { width: 15px; height: 12px; display: block; background: var(--night-3);
   clip-path: polygon(0 100%, 0 25%, 25% 60%, 50% 0, 75% 60%, 100% 25%, 100% 100%); }
 .you .crowns i.on { background: var(--blue); }
 .them .crowns i.on { background: var(--red); }
-.clock { font-family: var(--font-num); font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; text-align: center; min-width: 76px; line-height: 1; }
-.clock small { display: block; font-family: var(--font-display); font-size: 11px; letter-spacing: .14em; color: var(--muted); margin-top: 3px; font-weight: 700; }
-.clock.hot small { color: var(--elixir); }
+.clock { font-family: var(--font-display); font-size: 26px; font-variant-numeric: tabular-nums; text-align: center; min-width: 78px; line-height: 1; }
+.clock small { display: block; font-family: var(--font-ui); font-size: 10px; font-weight: 800; letter-spacing: .14em; color: var(--muted); margin-top: 3px; }
+.clock.hot small { color: var(--aether); }
 .clock.ot { color: var(--gold); }
 
+/* ---------- stage */
 #stage { position: relative; flex: 1 1 auto; min-height: 0; display: flex; justify-content: center; }
-#arena { display: block; touch-action: none; border-radius: 6px; cursor: crosshair; }
-
-.tray { display: flex; flex-direction: column; gap: 8px; }
-.hand { display: grid; grid-template-columns: 52px repeat(4, minmax(0, 1fr)); gap: 6px; align-items: end; }
-.next { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; letter-spacing: .14em; color: var(--muted); font-weight: 700; }
-.next .mini { width: 40px; height: 48px; border-radius: 5px; background: var(--ink-2); border: 1px solid var(--line); display: grid; place-items: center; font-family: var(--font-num); font-size: 13px; color: var(--muted); }
-.card {
-  position: relative; appearance: none; border: 1px solid var(--line); background: var(--ink-2); color: var(--text);
-  border-radius: 7px; padding: 6px 4px 5px; height: 78px; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-  font-family: var(--font-display); cursor: pointer; overflow: hidden; touch-action: none;
-  transition: transform .12s ease, border-color .12s ease;
-}
-.card .glyph { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--blue); font-family: var(--font-num); font-weight: 700; font-size: 13px; color: #fff; box-shadow: inset 0 -3px 0 rgba(0,0,0,.25); }
-.card.spell .glyph { background: var(--gold); color: var(--ink); border-radius: 8px; }
-.card.building .glyph { border-radius: 6px; }
-.card .nm { font-size: 12px; font-weight: 700; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.card .cost { position: absolute; top: 3px; left: 3px; width: 19px; height: 19px; border-radius: 50%; background: var(--elixir); font-family: var(--font-num); font-weight: 700; font-size: 12px; display: grid; place-items: center; color: #fff; }
-.card .fill { position: absolute; inset: auto 0 0 0; height: 0; background: rgba(192, 74, 217, .18); pointer-events: none; }
-.card.poor { color: var(--muted); }
-.card.poor .glyph { filter: grayscale(.85) brightness(.7); }
-.card.sel { border-color: var(--gold); transform: translateY(-6px); }
-.card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.elixir { display: grid; grid-template-columns: 28px 1fr; gap: 8px; align-items: center; }
-.elixir .num { font-family: var(--font-num); font-weight: 700; font-size: 20px; color: var(--elixir); text-align: center; font-variant-numeric: tabular-nums; }
-.bar { position: relative; height: 16px; border-radius: 4px; background: var(--ink-2); border: 1px solid var(--line); overflow: hidden; }
-.bar .lvl { position: absolute; inset: 0 auto 0 0; width: 50%; background: var(--elixir); }
-.bar .ticks { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(20,26,36,.7) calc(10% - 1px) 10%); }
-
-.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(20, 26, 36, .78); border-radius: 6px; padding: 16px; }
-.panel { width: min(320px, 100%); display: flex; flex-direction: column; gap: 16px; text-align: center; }
-.panel h1 { font-family: var(--font-display); font-weight: 800; font-size: 48px; line-height: .9; letter-spacing: .02em; text-transform: uppercase; margin: 0; text-wrap: balance; }
-.panel h1 em { font-style: normal; color: var(--gold); }
-.panel p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.35; }
-.panel .rules { text-align: left; font-size: 14px; color: var(--text); display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.panel .rules li { display: grid; grid-template-columns: 18px 1fr; gap: 6px; line-height: 1.3; }
-.panel .rules b { color: var(--gold); font-family: var(--font-num); }
-.btns { display: flex; gap: 8px; }
-.btn { flex: 1; appearance: none; border: 1px solid var(--line); background: var(--ink-2); color: var(--text); border-radius: 7px; padding: 10px 8px; font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
-.btn.primary { background: var(--blue); border-color: var(--blue); }
-.btn:hover { border-color: var(--gold); }
-.btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.label { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-.result.win { color: var(--blue); }
-.result.loss { color: var(--red); }
-.verify { font-family: var(--font-num); font-size: 12px; color: var(--muted); line-height: 1.4; }
-.verify b { color: #7fd18b; font-weight: 700; }
-.toast { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: var(--ink); border: 1px solid var(--line); color: var(--text); padding: 6px 12px; border-radius: 6px; font-size: 14px; font-weight: 700; letter-spacing: .04em; pointer-events: none; opacity: 0; transition: opacity .2s; white-space: nowrap; }
-.toast.show { opacity: 1; }
-.group { display: flex; flex-direction: column; gap: 8px; }
-.code-row, .link-row { display: flex; gap: 8px; margin: 0; }
-.code-row input, .link-row input { flex: 1; min-width: 0; background: var(--ink-2); border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 9px 10px; font-family: var(--font-num); font-size: 16px; letter-spacing: .2em; text-transform: uppercase; }
-.link-row input { letter-spacing: 0; text-transform: none; font-size: 13px; }
-.code-row input:focus-visible, .link-row input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
-.code-row .btn { flex: 0 0 auto; padding-inline: 18px; }
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.wait-title { margin: 0; font-size: 26px; font-weight: 800; text-transform: uppercase; letter-spacing: .02em; text-wrap: balance; }
-.dots::after { content: ""; animation: dots 1.4s steps(4) infinite; }
-@keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
-.invite { display: flex; flex-direction: column; gap: 10px; }
-.invite .code { font-family: var(--font-num); font-weight: 700; font-size: 40px; letter-spacing: .25em; color: var(--gold); padding-left: .25em; }
-.net { position: absolute; top: 8px; left: 8px; z-index: 2; background: rgba(20,26,36,.82); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-family: var(--font-num); font-size: 12px; display: flex; align-items: center; gap: 6px; pointer-events: none; }
-.net::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, #7fd18b); }
+#arena { display: block; touch-action: none; border-radius: 12px; cursor: crosshair; }
+.iconbtn { position: absolute; top: 8px; right: 8px; z-index: 3; width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(255,255,255,.18); background: rgba(20,26,51,.6); color: var(--text); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.iconbtn svg { width: 18px; height: 18px; }
+.iconbtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.net { position: absolute; top: 8px; left: 8px; z-index: 2; background: rgba(20,26,51,.75); border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 3px 9px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; pointer-events: none; font-variant-numeric: tabular-nums; }
+.net::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--good)); }
 .net.warn { --dot: var(--gold); color: var(--gold); }
 .net.bad { --dot: var(--red); color: #ffb3a6; }
-.countdown { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font-family: var(--font-display); font-weight: 800; font-size: 44px; letter-spacing: .04em; text-transform: uppercase; text-shadow: 0 2px 0 rgba(0,0,0,.4); }
-@media (prefers-reduced-motion: reduce) { .card, .toast { transition: none; } .dots::after { animation: none; content: "..."; } }
+.toast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(20,26,51,.92); border: 1px solid var(--line); color: var(--text); padding: 6px 14px; border-radius: 10px; font-size: 15px; font-weight: 700; pointer-events: none; opacity: 0; transition: opacity .2s; white-space: nowrap; z-index: 6; }
+.toast.show { opacity: 1; }
+
+/* ---------- tray */
+.tray { display: flex; flex-direction: column; gap: 8px; }
+.hand { display: grid; grid-template-columns: 50px repeat(4, minmax(0, 1fr)); gap: 6px; align-items: end; }
+.next { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; letter-spacing: .14em; color: var(--muted); font-weight: 800; }
+.next .mini { width: 42px; height: 50px; border-radius: 8px; background: var(--night-2); border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden; }
+.next .mini canvas { width: 38px; height: 38px; opacity: .8; }
+.card {
+  position: relative; appearance: none; border: 2px solid #4b5a99; color: var(--text);
+  background: linear-gradient(180deg, #34428a 0%, #222b5c 100%);
+  border-radius: 10px; padding: 4px 3px 4px; height: 84px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  cursor: pointer; overflow: hidden; touch-action: none; box-shadow: 0 3px 0 #10152e;
+  transition: transform .12s ease, border-color .12s ease, filter .12s ease;
+}
+.card canvas { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); width: 56px; height: 56px; pointer-events: none; }
+.card .nm { position: relative; font-size: 12px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-shadow: 0 1px 0 #0b0f22; }
+.card .cost { position: absolute; top: 3px; left: 3px; z-index: 1; width: 21px; height: 21px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e3a6ff, var(--aether) 60%, #6a2aa8); font-family: var(--font-display); font-size: 13px; display: grid; place-items: center; color: #fff; text-shadow: 0 1px 0 #3c1066; box-shadow: 0 1px 0 #2a0a4a; }
+.card .fill { position: absolute; inset: auto 0 0 0; height: 0; background: rgba(182, 92, 255, .22); pointer-events: none; }
+.card.poor { filter: saturate(.35) brightness(.75); }
+.card.sel { border-color: var(--gold); transform: translateY(-7px); box-shadow: 0 6px 14px rgba(255,201,74,.25), 0 3px 0 #10152e; }
+.card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.aether { display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: center; }
+.aether .num { font-family: var(--font-display); font-size: 24px; color: #e6b8ff; text-align: center; font-variant-numeric: tabular-nums; text-shadow: 0 0 10px rgba(182,92,255,.6); }
+.bar { position: relative; height: 18px; border-radius: 9px; background: var(--night-2); border: 1px solid var(--line); overflow: hidden; }
+.bar .lvl { position: absolute; inset: 0 auto 0 0; width: 50%; background: linear-gradient(180deg, #d79bff, var(--aether) 55%, #7d35c9); box-shadow: 0 0 12px rgba(182,92,255,.7); }
+.bar .ticks { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgba(20,26,51,.75) calc(10% - 2px) 10%); }
+
+/* ---------- overlays */
+.overlay { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(14, 19, 40, .74); backdrop-filter: blur(2px); border-radius: 12px; padding: 14px; overflow-y: auto; }
+.panel { width: min(330px, 100%); display: flex; flex-direction: column; gap: 12px; text-align: center; }
+.panel h1 { font-family: var(--font-display); font-weight: 400; font-size: 52px; line-height: .9; letter-spacing: .01em; margin: 0; text-shadow: 0 4px 0 #0c1130; }
+.panel h1 em { font-style: normal; color: var(--gold); }
+.panel h2 { font-family: var(--font-display); font-weight: 400; font-size: 28px; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+.panel p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.35; }
+.label { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); font-weight: 800; }
+.group { display: flex; flex-direction: column; gap: 8px; }
+.btns { display: flex; gap: 8px; }
+.btn { flex: 1; appearance: none; border: 0; background: var(--night-3); color: var(--text); border-radius: 12px; padding: 10px 8px 8px; font-family: var(--font-display); font-size: 17px; letter-spacing: .03em; cursor: pointer; box-shadow: 0 4px 0 #11173a; transition: transform .08s ease; }
+.btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #11173a; }
+.btn.primary { background: linear-gradient(180deg, #4fb0ff, var(--blue-deep)); box-shadow: 0 4px 0 #0d3a7a; }
+.btn.gold { background: linear-gradient(180deg, #ffd66b, #e0a020); color: #3a2400; box-shadow: 0 4px 0 #8a5c00; }
+.btn.big { font-size: 22px; padding: 12px 8px 10px; }
+.btn.ghost { background: transparent; box-shadow: none; border: 1px solid var(--line); font-family: var(--font-ui); font-weight: 700; font-size: 15px; }
+.btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.btn[disabled] { opacity: .5; cursor: default; }
+.row-input { display: flex; gap: 8px; margin: 0; }
+.row-input input, .field input { flex: 1; min-width: 0; background: var(--night-2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 9px 11px; font-size: 16px; font-weight: 700; }
+#joinCode { letter-spacing: .2em; text-transform: uppercase; }
+.row-input .btn { flex: 0 0 auto; padding-inline: 18px; }
+input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.profile { display: flex; align-items: center; gap: 10px; background: var(--night-2); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; text-align: left; }
+.profile .badge { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 10px; display: grid; place-items: center; font-family: var(--font-display); font-size: 15px; color: #10152e; background: var(--tier, #9fd8c9); }
+.profile .meta { flex: 1; min-width: 0; line-height: 1.15; }
+.profile .meta b { font-family: var(--font-display); font-weight: 400; font-size: 18px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile .meta span { font-size: 13px; color: var(--muted); font-weight: 700; }
+.linkbtn { appearance: none; background: none; border: 0; color: var(--muted); font-weight: 700; font-size: 13px; text-decoration: underline; cursor: pointer; padding: 4px; }
+.linkbtn:focus-visible { outline: 2px solid var(--gold); }
+
+.tabs { display: flex; background: var(--night-2); border-radius: 10px; padding: 3px; gap: 3px; }
+.tabs button { flex: 1; appearance: none; border: 0; background: transparent; color: var(--muted); padding: 7px; border-radius: 8px; font-weight: 800; font-size: 14px; cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--night-3); color: var(--text); }
+.field { display: flex; flex-direction: column; gap: 4px; text-align: left; font-size: 13px; font-weight: 700; color: var(--muted); }
+.error { color: #ffb3a6; font-weight: 700; font-size: 14px; min-height: 1.2em; margin: 0; }
+
+.list { display: flex; flex-direction: column; max-height: min(52vh, 420px); overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: rgba(20,26,51,.6); }
+.lrow { display: grid; grid-template-columns: 34px 1fr auto auto; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid rgba(61,75,133,.5); text-align: left; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.lrow:last-child { border-bottom: 0; }
+.lrow.me { background: rgba(47,155,255,.16); }
+.lrow .rk { color: var(--muted); font-family: var(--font-display); font-weight: 400; font-size: 16px; text-align: center; }
+.lrow .nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .wl { color: var(--muted); font-size: 12px; }
+.pill { display: inline-block; font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 99px; color: #10152e; background: var(--tier, #9fd8c9); }
+.res-win, .lrow .rk.res-win { color: var(--good); } .res-loss, .lrow .rk.res-loss { color: #ff8f86; } .res-draw { color: var(--muted); }
+.empty { padding: 18px 12px; color: var(--muted); font-size: 14px; }
+
+.wait-title .dots::after { content: ""; animation: dots 1.4s steps(4) infinite; }
+@keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+.invite { display: flex; flex-direction: column; gap: 10px; }
+.invite .code { font-family: var(--font-display); font-size: 44px; letter-spacing: .22em; color: var(--gold); padding-left: .22em; }
+.matchup { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 4; }
+.matchup .vs { display: flex; flex-direction: column; gap: 6px; align-items: center; background: rgba(14,19,40,.78); border-radius: 14px; padding: 14px 22px; }
+.matchup .vs b { font-family: var(--font-display); font-weight: 400; font-size: 24px; }
+.matchup .vs .t { color: #ffc4bd; } .matchup .vs .y { color: #bfe0ff; }
+.matchup .vs span { font-size: 13px; color: var(--muted); font-weight: 700; }
+.matchup .vs i { font-style: normal; font-family: var(--font-display); color: var(--gold); font-size: 20px; }
+.result { font-size: 56px !important; }
+.result.win { color: var(--gold); }
+.result.loss { color: #ff8f86; }
+.delta { font-family: var(--font-display); font-size: 22px; }
+.delta .up { color: var(--good); } .delta .down { color: #ff8f86; }
+.verify { font-size: 12px; color: var(--muted); line-height: 1.45; font-variant-numeric: tabular-nums; }
+.verify b { color: var(--good); font-weight: 800; }
+@media (prefers-reduced-motion: reduce) { .card, .toast, .btn { transition: none; } .wait-title .dots::after { animation: none; content: "..."; } }
 </style>
 
 <div id="app">
   <div class="score">
-    <div class="side you"><div class="crowns" id="crowns0"><i></i><i></i><i></i></div><span class="name" id="meName">You</span></div>
+    <div class="side you"><div class="crowns" id="crowns0"><i></i><i></i><i></i></div><div class="who"><span class="name" id="meName">You</span><span class="sub" id="meSub"></span></div></div>
     <div class="clock" id="clock">3:00<small id="clockLabel">REGULATION</small></div>
-    <div class="side them"><span class="name" id="botName">Bot</span><div class="crowns" id="crowns1"><i></i><i></i><i></i></div></div>
+    <div class="side them"><div class="who"><span class="name" id="oppName">Bot</span><span class="sub" id="oppSub"></span></div><div class="crowns" id="crowns1"><i></i><i></i><i></i></div></div>
   </div>
   <div id="stage">
-    <canvas id="arena" aria-label="Arena. Select a card, then tap your half of the arena to deploy it."></canvas>
-    <div class="toast" id="toast"></div>
-    <div class="countdown" id="countdown" hidden>Get ready</div>
+    <canvas id="arena" aria-label="Arena. Select a card, then tap your island to deploy it."></canvas>
+    <button class="iconbtn" id="muteBtn" type="button" aria-label="Sound on" title="Sound"></button>
     <div class="net" id="net" hidden></div>
+    <div class="toast" id="toast"></div>
+    <div class="matchup" id="matchup" hidden><div class="vs"><b class="t" id="vsThem">Rival</b><span id="vsThemSub"></span><i>VS</i><b class="y" id="vsMe">You</b><span id="vsMeSub"></span></div></div>
+
     <div class="overlay" id="startScreen">
       <div class="panel">
-        <div class="label">Prototype v0.2</div>
         <h1>Lane<em>break</em></h1>
-        <p>Destroy the enemy towers. Pick a card, tap your half of the arena to deploy it.</p>
+        <div class="profile" id="profileCard" hidden>
+          <div class="badge" id="profBadge">—</div>
+          <div class="meta"><b id="profName">name</b><span id="profLine">Unranked</span></div>
+          <button class="linkbtn" id="signOut" type="button">Sign out</button>
+        </div>
+        <button class="btn ghost" id="signInBtn" type="button">Sign in or create an account</button>
         <div class="group" id="onlineGroup">
-          <div class="label">Play online</div>
+          <button class="btn gold big" id="rankedBtn" type="button">Ranked match</button>
           <div class="btns">
-            <button class="btn primary" id="findMatch">Find match</button>
-            <button class="btn" id="playFriend">Play a friend</button>
+            <button class="btn primary" id="findMatch" type="button">Casual</button>
+            <button class="btn" id="playFriend" type="button">Play a friend</button>
           </div>
-          <form class="code-row" id="joinForm">
+          <form class="row-input" id="joinForm">
             <label class="sr" for="joinCode">Match code</label>
-            <input id="joinCode" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Code">
+            <input id="joinCode" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Friend's code">
             <button class="btn" id="joinBtn" type="submit">Join</button>
           </form>
+          <button class="btn ghost" id="boardBtn" type="button">Leaderboard</button>
         </div>
         <div class="group">
           <div class="label">Practice vs bot</div>
           <div class="btns" role="group" aria-label="Bot difficulty">
-            <button class="btn" id="diffEasy" data-diff="easy">Easy</button>
-            <button class="btn" id="diffNormal" data-diff="normal">Normal</button>
-            <button class="btn" id="diffHard" data-diff="hard">Hard</button>
+            <button class="btn" id="diffEasy" data-diff="easy" type="button">Easy</button>
+            <button class="btn" id="diffNormal" data-diff="normal" type="button">Normal</button>
+            <button class="btn" id="diffHard" data-diff="hard" type="button">Hard</button>
           </div>
         </div>
       </div>
     </div>
+
+    <div class="overlay" id="authScreen" hidden>
+      <form class="panel" id="authForm" novalidate>
+        <h2 id="authTitle">Sign in</h2>
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" id="tabLogin" aria-selected="true">Sign in</button>
+          <button type="button" role="tab" id="tabRegister" aria-selected="false">Create account</button>
+        </div>
+        <label class="field" for="authUser">Username
+          <input id="authUser" autocomplete="username" maxlength="16" spellcheck="false" autocapitalize="off">
+        </label>
+        <label class="field" for="authPass">Password
+          <input id="authPass" type="password" autocomplete="current-password" maxlength="72">
+        </label>
+        <p class="error" id="authError" role="alert"></p>
+        <button class="btn primary big" id="authSubmit" type="submit">Sign in</button>
+        <button class="btn ghost" id="authBack" type="button">Back</button>
+      </form>
+    </div>
+
+    <div class="overlay" id="boardScreen" hidden>
+      <div class="panel">
+        <h2>Leaderboard</h2>
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" id="tabTop" aria-selected="true">Top players</button>
+          <button type="button" role="tab" id="tabMine" aria-selected="false">My matches</button>
+        </div>
+        <div class="list" id="boardList"><div class="empty">Loading…</div></div>
+        <p class="verify" id="boardNote"></p>
+        <button class="btn ghost" id="boardBack" type="button">Back</button>
+      </div>
+    </div>
+
     <div class="overlay" id="waitScreen" hidden>
       <div class="panel">
         <div class="label" id="waitLabel">Finding a match</div>
-        <h2 class="wait-title" id="waitTitle">Looking for an opponent<span class="dots"></span></h2>
+        <h2 class="wait-title" id="waitTitle">Looking for a rival<span class="dots"></span></h2>
+        <p id="waitNote"></p>
         <div class="invite" id="invite" hidden>
           <p>Send this link to your friend. The match starts when they open it.</p>
           <div class="code" id="roomCode">-----</div>
-          <div class="link-row">
+          <div class="row-input">
             <input id="roomLink" readonly aria-label="Invite link">
             <button class="btn" id="copyLink" type="button">Copy</button>
           </div>
         </div>
-        <div class="btns"><button class="btn" id="cancelWait" type="button">Cancel</button></div>
+        <div class="btns"><button class="btn ghost" id="cancelWait" type="button">Cancel</button></div>
       </div>
     </div>
+
     <div class="overlay" id="endScreen" hidden>
       <div class="panel">
         <div class="label" id="endLabel">Match over</div>
         <h1 class="result" id="endTitle">Victory</h1>
         <p id="endScore">3 – 1</p>
+        <div class="delta" id="endDelta" hidden></div>
         <div class="verify" id="verify"></div>
         <div class="btns">
-          <button class="btn primary" id="rematch">Play again</button>
-          <button class="btn" id="menu">Menu</button>
+          <button class="btn primary" id="rematch" type="button">Play again</button>
+          <button class="btn" id="menu" type="button">Menu</button>
         </div>
       </div>
     </div>
   </div>
   <div class="tray">
     <div class="hand" id="hand">
-      <div class="next"><div class="mini" id="nextCard">–</div>NEXT</div>
+      <div class="next"><div class="mini" id="nextCard"></div>NEXT</div>
     </div>
-    <div class="elixir">
+    <div class="aether">
       <div class="num" id="elixirNum">5</div>
       <div class="bar"><div class="lvl" id="elixirLvl"></div><div class="ticks"></div></div>
     </div>
