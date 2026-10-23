@@ -1,4 +1,4 @@
-# Lanebreak (prototype v0.12)
+# Lanebreak (prototype v0.13)
 
 Real-time lane card battler on floating sky islands. Online 1v1 (ranked, casual, friends),
 accounts with Glicko-2 ratings, a leaderboard, and practice against a bot. A deterministic

@@ -4,13 +4,14 @@
 import { CARDS } from "../sim/cards";
 import { Rng } from "../sim/rng";
 import {
-  ARENA_H, ARENA_W, BRIDGES, BRIDGE_HALF, DEPLOY_TICKS, RIVER_BOTTOM, RIVER_TOP, SPELL_DELAY, canDeployAt, createGame,
+  ARENA_H, ARENA_W, BRIDGES, BRIDGE_HALF, DEPLOY_TICKS, MID_Y, RIVER_BOTTOM, RIVER_TOP, SPELL_DELAY, canDeployAt, createGame,
   type Entity, type GameState, type PlayerId,
 } from "../sim/sim";
 import { sfx } from "./audio";
 import { animFrame, spriteFor } from "./spriteCache";
 import { ANIM_BASE_HEIGHT, animKey } from "./unitAnim";
 import { kingImage, towerImage } from "./towerSkins";
+import { arenaImg, whenArenaReady } from "./arenaArt";
 import { SPRITE_HEIGHT, spriteKey, type View } from "./unitSprites";
 import { BOWS, HEAVY, SLAMMERS, SWORD, WINGS, rigImage } from "./rig";
 import { RIG2_HEIGHT, RigDraw, rigFor } from "./rig2";
@@ -71,6 +72,9 @@ export function toWorld(clientX: number, clientY: number) {
 
 // ------------------------------------------------------------------ scenery (cached)
 let bgKey = "";
+whenArenaReady(() => {
+  bgKey = "";
+});
 const bgBase = document.createElement("canvas");
 const bgTop = document.createElement("canvas");
 const vignette = document.createElement("canvas");
@@ -90,260 +94,185 @@ function buildScenery() {
     cv.height = h;
   }
   const c = bgBase.getContext("2d")!;
+  const b = bgTop.getContext("2d")!;
   const Y = (y: number) => y * scale; // scenery is always drawn from the bottom player's point of view
-  // sky
+  c.imageSmoothingQuality = "high";
+  b.imageSmoothingQuality = "high";
+  /** draw an image with its bottom-centre at world (x, y), `wd` world units wide */
+  const put = (cx: CanvasRenderingContext2D, name: string, x: number, y: number, wd: number, flipX = false) => {
+    const im = arenaImg(name);
+    if (!im) return;
+    const ww = L(wd);
+    const hh = (ww * im.naturalHeight) / im.naturalWidth;
+    cx.save();
+    cx.translate(SX(x), Y(y));
+    if (flipX) cx.scale(-1, 1);
+    cx.drawImage(im, -ww / 2, -hh, ww, hh);
+    cx.restore();
+  };
+
+  // --- sky in the gap between the islands
   const sky = c.createLinearGradient(0, Y(RIVER_TOP - 500), 0, Y(RIVER_BOTTOM + 500));
   sky.addColorStop(0, "#7ec6ff");
   sky.addColorStop(0.5, "#cdeaff");
   sky.addColorStop(1, "#8fd0ff");
   c.fillStyle = sky;
   c.fillRect(0, 0, w, h);
+  // a far-off floating island drifting in the distance
+  c.globalAlpha = 0.75;
+  put(c, "far_island", 9000, RIVER_BOTTOM + 150, 1100);
+  c.globalAlpha = 1;
 
-  // --- top island (always the rival's): grass + hanging cliff underside
-  c.beginPath();
-  c.moveTo(0, 0);
-  c.lineTo(w, 0);
-  for (let x = ARENA_W; x >= 0; x -= 200) c.lineTo(SX(x), Y(edgeTop(x)));
-  c.closePath();
-  c.fillStyle = GRASS;
-  c.fill();
-  // cliff face + stalactite rocks beneath the top island
-  const rng = new Rng(42);
-  c.beginPath();
-  for (let x = 0; x <= ARENA_W; x += 200) c.lineTo(SX(x), Y(edgeTop(x)));
-  for (let x = ARENA_W; x >= 0; x -= 300) c.lineTo(SX(x), Y(edgeTop(x) + 520 + (rng.int(5) - 2) * 50));
-  c.closePath();
-  const cliff = c.createLinearGradient(0, Y(RIVER_TOP), 0, Y(RIVER_TOP + 600));
-  cliff.addColorStop(0, "#a17d5a");
-  cliff.addColorStop(1, "#6b4f3a");
-  c.fillStyle = cliff;
-  c.fill();
-  c.fillStyle = "#5b4232";
-  for (let x = 300; x < ARENA_W; x += 900 + rng.int(500)) {
-    const len = 350 + rng.int(500);
-    const half = 220 + rng.int(160);
-    const top = edgeTop(x) + 480;
+  // --- grass: the painted 3x3 tile (one game tile per square) laid over both islands
+  const grass = arenaImg("grass");
+  const TILE3 = 3000;
+  for (const [y0, y1] of [[0, RIVER_TOP], [RIVER_BOTTOM, ARENA_H]]) {
+    c.save();
     c.beginPath();
-    c.moveTo(SX(x - half), Y(top));
-    c.lineTo(SX(x + half), Y(top));
-    c.lineTo(SX(x + 40), Y(top + len));
-    c.closePath();
-    c.fill();
+    c.rect(0, Y(y0), w, Y(y1) - Y(y0));
+    c.clip();
+    for (let ty = y0; ty < y1; ty += TILE3) {
+      for (let tx = 0; tx < ARENA_W; tx += TILE3) {
+        c.fillStyle = "#7aa52a";
+        c.fillRect(SX(tx), Y(ty), L(TILE3) + 1, L(TILE3) + 1);
+        if (grass) {
+          // skip the tile's outer bevel and soft edge so neighbours butt together cleanly
+          const gw = grass.naturalWidth;
+          const gh = grass.naturalHeight;
+          c.drawImage(grass, gw * 0.03, gh * 0.03, gw * 0.93, gh * 0.83, SX(tx), Y(ty), L(TILE3) + 1, L(TILE3) + 1);
+        }
+      }
+    }
+    c.restore();
   }
-  // strata + roots
-  c.strokeStyle = "rgba(60,40,28,.45)";
-  c.lineWidth = Math.max(1, L(35));
-  for (const off of [180, 360]) {
-    c.beginPath();
-    for (let x = 0; x <= ARENA_W; x += 200) c.lineTo(SX(x), Y(edgeTop(x) + off + 30 * Math.sin(x * 0.004)));
-    c.stroke();
-  }
-  c.strokeStyle = "#4f7d36";
-  c.lineWidth = Math.max(1, L(40));
-  for (let x = 500; x < ARENA_W; x += 700 + rng.int(600)) {
-    c.beginPath();
-    c.moveTo(SX(x), Y(edgeTop(x)));
-    c.quadraticCurveTo(SX(x + 120), Y(edgeTop(x) + 300), SX(x - 40), Y(edgeTop(x) + 450 + rng.int(300)));
-    c.stroke();
-  }
-
-  // --- bottom island (always yours)
-  c.beginPath();
-  for (let x = 0; x <= ARENA_W; x += 200) c.lineTo(SX(x), Y(edgeBottom(x)));
-  c.lineTo(w, h);
-  c.lineTo(0, h);
-  c.closePath();
-  c.fillStyle = GRASS;
-  c.fill();
-  // sunny lip along the edge
-  c.strokeStyle = "#a6e07e";
-  c.lineWidth = Math.max(2, L(110));
-  c.beginPath();
-  for (let x = 0; x <= ARENA_W; x += 200) c.lineTo(SX(x), Y(edgeBottom(x) + 60));
-  c.stroke();
-
-  // painterly grass: soft light and dark patches so the field isn't flat
+  // soft light and shade patches so the repeat doesn't read as a grid
   const patch = new Rng(31);
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; i < 40; i++) {
     const x = patch.int(ARENA_W);
     const y = patch.int(ARENA_H);
     if (y > RIVER_TOP - 300 && y < RIVER_BOTTOM + 300) continue;
-    const rr = L(900 + patch.int(1800));
+    const rr = L(1200 + patch.int(2000));
     const g = c.createRadialGradient(SX(x), Y(y), 0, SX(x), Y(y), rr);
     const light = patch.int(2) === 0;
-    g.addColorStop(0, light ? "rgba(190,240,120,.16)" : "rgba(30,80,30,.14)");
+    g.addColorStop(0, light ? "rgba(220,255,150,.12)" : "rgba(20,60,20,.12)");
     g.addColorStop(1, "rgba(0,0,0,0)");
     c.fillStyle = g;
     c.fillRect(SX(x) - rr, Y(y) - rr, rr * 2, rr * 2);
   }
 
-  // fine grass texture: thousands of short blades in slightly different greens
-  const blades = new Rng(83);
-  c.lineCap = "round";
-  for (let i = 0; i < 9000; i++) {
-    const x = blades.int(ARENA_W);
-    const y = blades.int(ARENA_H);
-    if (y > RIVER_TOP - 250 && y < RIVER_BOTTOM + 250) continue;
-    const tone = blades.int(4);
-    c.strokeStyle = ["rgba(40,95,30,.22)", "rgba(150,215,95,.2)", "rgba(70,130,45,.2)", "rgba(200,235,140,.14)"][tone];
-    c.lineWidth = Math.max(0.6, L(28));
-    const len = 90 + blades.int(120);
-    const lean = blades.int(60) - 30;
-    c.beginPath();
-    c.moveTo(SX(x), Y(y));
-    c.lineTo(SX(x + lean), Y(y - len));
-    c.stroke();
-  }
-
-  // subtle tile checker for placement readability
-  c.fillStyle = "rgba(40,90,30,.06)";
-  for (let ty = 0; ty < 32; ty++) {
-    if (ty === 15 || ty === 16) continue;
-    for (let tx = (ty % 2); tx < 18; tx += 2) c.fillRect(SX(tx * 1000), Y(ty * 1000), Math.ceil(L(1000)), Math.ceil(L(1000)));
-  }
-
-  // cobblestone paths: bridge → side tower → king, on both islands.
-  // Drawn as a mask on a scratch canvas, then stones are painted inside the mask.
-  const paths = document.createElement("canvas");
-  paths.width = w;
-  paths.height = h;
-  const pc = paths.getContext("2d")!;
-  pc.lineCap = "round";
-  pc.lineJoin = "round";
-  const shapes = (ctx2: CanvasRenderingContext2D, grow: number, color: string) => {
-    ctx2.strokeStyle = color;
-    ctx2.fillStyle = color;
-    for (const flipY of [false, true]) {
-      const m = (y: number) => (flipY ? ARENA_H - y : y);
-      for (const bx of BRIDGES) {
-        ctx2.lineWidth = L(1900 + grow);
-        ctx2.beginPath();
-        [[bx, m(RIVER_BOTTOM + 100)], [bx, m(25500)], [9000, m(29500)]].forEach(([x, y], i) =>
-          i ? ctx2.lineTo(SX(x), Y(y)) : ctx2.moveTo(SX(x), Y(y)));
-        ctx2.stroke();
-      }
-      for (const [x, y, r] of [[3500, 25500, 1900], [14500, 25500, 1900], [9000, 29500, 2300]]) {
-        ctx2.beginPath();
-        ctx2.ellipse(SX(x), Y(m(y)), L(r + grow / 2), L(r * 0.8 + grow / 2), 0, 0, Math.PI * 2);
-        ctx2.fill();
-      }
-    }
+  // --- stone pavers: bridge -> side tower -> king on both islands, built from the kit's path tile
+  const pt = arenaImg("pathtile");
+  const segDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
   };
-  c.lineCap = "round";
-  c.lineJoin = "round";
-  shapes(c, 220, "rgba(60,50,35,.45)"); // soft dark edge
-  shapes(pc, 0, PATH);
-  pc.globalCompositeOperation = "source-atop";
-  const cob = new Rng(57);
-  const step = 360;
-  for (let y = 0; y < ARENA_H; y += step) {
-    for (let x = (y / step) % 2 ? step / 2 : 0; x < ARENA_W; x += step) {
-      const jx = x + cob.int(90) - 45;
-      const jy = y + cob.int(90) - 45;
-      const rx = L(150 + cob.int(40));
-      const ry = L(120 + cob.int(30));
-      const tone = 0.85 + cob.int(30) / 100;
-      pc.beginPath();
-      pc.ellipse(SX(jx), Y(jy), rx, ry, 0, 0, Math.PI * 2);
-      const g = pc.createLinearGradient(0, Y(jy) - ry, 0, Y(jy) + ry);
-      g.addColorStop(0, `rgba(${Math.round(214 * tone)},${Math.round(210 * tone)},${Math.round(200 * tone)},1)`);
-      g.addColorStop(1, `rgba(${Math.round(150 * tone)},${Math.round(146 * tone)},${Math.round(138 * tone)},1)`);
-      pc.fillStyle = g;
-      pc.fill();
-      pc.strokeStyle = "rgba(80,68,52,.45)";
-      pc.lineWidth = Math.max(0.6, L(25));
-      pc.stroke();
+  const onPath = (x: number, y: number) => {
+    const yy = y > MID_Y ? y : ARENA_H - y; // mirror the top island onto the bottom one
+    if (yy < RIVER_BOTTOM) return false;
+    for (const bx of BRIDGES) {
+      if (Math.abs(x - bx) < 1000 && yy < 25500) return true;
+      if (segDist(x, yy, bx, 25500, 9000, 29500) < 800) return true;
+      if (Math.hypot(x - bx, (yy - 25500) / 0.85) < 1800) return true;
+    }
+    return Math.hypot(x - 9000, (yy - 29500) / 0.85) < 2200;
+  };
+  const CELL = 500;
+  const cells = [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2]];
+  const pr = new Rng(57);
+  for (const pass of [0, 1]) {
+    for (let y = 0; y < ARENA_H; y += CELL) {
+      if (y >= RIVER_TOP && y < RIVER_BOTTOM) continue;
+      for (let x = 0; x < ARENA_W; x += CELL) {
+        if (!onPath(x + CELL / 2, y + CELL / 2)) continue;
+        if (pass === 0) {
+          // shadow under the slabs
+          c.fillStyle = "rgba(40,50,25,.35)";
+          c.fillRect(SX(x) - L(40), Y(y) + L(60), L(CELL) + L(80), L(CELL));
+        } else if (pt) {
+          const [cx3, cy3] = cells[pr.int(cells.length)];
+          const sw = pt.naturalWidth / 3;
+          const sh = pt.naturalHeight / 3;
+          c.drawImage(pt, cx3 * sw + 2, cy3 * sh + 2, sw - 4, sh - 4, SX(x), Y(y), L(CELL) + 0.5, L(CELL) + 0.5);
+        } else {
+          c.fillStyle = PATH;
+          c.fillRect(SX(x), Y(y), L(CELL), L(CELL));
+        }
+      }
     }
   }
-  c.drawImage(paths, 0, 0);
 
-  // decorations: grass tufts, flowers, pebbles, bushes (kept off paths and the gap)
-  const deco = new Rng(7);
-  const clear = (x: number, y: number) => {
-    if (y > RIVER_TOP - 700 && y < RIVER_BOTTOM + 500) return false;
-    for (const bx of BRIDGES) if (Math.abs(x - bx) < BRIDGE_HALF + 100) return false;
-    for (const [tx, ty] of [[3500, 25500], [14500, 25500], [9000, 29500], [3500, 6500], [14500, 6500], [9000, 2500]]) {
-      if ((x - tx) ** 2 + (y - ty) ** 2 < 2600 ** 2) return false;
+  // --- island edges along the gap: cliffs hang under the far island, a stone curb on yours
+  const er = new Rng(42);
+  const EDGE_W = 2300;
+  for (let x = -400, i = 0; x < ARENA_W + 400; x += EDGE_W * 0.82, i++) {
+    const kind = i % 3 === 1 ? "cliff_falls" : i % 2 ? "cliff2" : "cliff";
+    const im = arenaImg(kind);
+    if (!im) continue;
+    const hh = (EDGE_W * im.naturalHeight) / im.naturalWidth;
+    const lip = kind === "cliff" ? 0.16 : 0.14; // the grassy top overlaps the island edge
+    put(c, kind, x + EDGE_W / 2, RIVER_TOP - hh * lip + hh, EDGE_W, er.int(2) === 0);
+  }
+  const river = arenaImg("river");
+  if (river) {
+    // the river piece's top row of stones makes a curb for the near island's edge
+    const sh = river.naturalHeight * 0.24;
+    const segW = 3000;
+    const segH = (segW * sh) / river.naturalWidth * 2.2;
+    for (let x = 0; x < ARENA_W; x += segW) {
+      c.drawImage(river, 0, 0, river.naturalWidth, sh, SX(x), Y(RIVER_BOTTOM) - L(segH) * 0.45, L(segW) + 1, L(segH));
     }
+  }
+
+  // --- decorations from the kit (kept off paths, towers and the gap)
+  const deco = new Rng(7);
+  const towersAt = [[3500, 25500], [14500, 25500], [9000, 29500], [3500, 6500], [14500, 6500], [9000, 2500]];
+  const clear = (x: number, y: number, pad: number) => {
+    if (y > RIVER_TOP - 500 && y < RIVER_BOTTOM + 500) return false;
+    if (onPath(x, y) || onPath(x + pad, y) || onPath(x - pad, y)) return false;
+    for (const [tx, ty] of towersAt) if ((x - tx) ** 2 + (y - ty) ** 2 < (2300 + pad) ** 2) return false;
     return true;
   };
-  for (let i = 0; i < 700; i++) {
-    const x = deco.int(ARENA_W);
-    const y = deco.int(ARENA_H);
-    if (!clear(x, y)) continue;
-    c.strokeStyle = deco.int(2) ? GRASS_DARK : "#93d46f";
-    c.lineWidth = Math.max(1, L(45));
-    c.beginPath();
-    c.moveTo(SX(x - 60), Y(y));
-    c.lineTo(SX(x - 90), Y(y - 160));
-    c.moveTo(SX(x), Y(y));
-    c.lineTo(SX(x + 10), Y(y - 210));
-    c.moveTo(SX(x + 60), Y(y));
-    c.lineTo(SX(x + 100), Y(y - 150));
-    c.stroke();
-  }
-  const petals = ["#fff4f8", "#ffd65c", "#ff9bd2", "#b9a7ff"];
-  for (let i = 0; i < 160; i++) {
-    const x = deco.int(ARENA_W);
-    const y = deco.int(ARENA_H);
-    if (!clear(x, y)) continue;
-    c.fillStyle = petals[deco.int(petals.length)];
-    for (let k = 0; k < 5; k++) {
-      const a = (k / 5) * Math.PI * 2;
-      c.beginPath();
-      c.arc(SX(x + Math.cos(a) * 70), Y(y + Math.sin(a) * 70), Math.max(1, L(55)), 0, Math.PI * 2);
-      c.fill();
-    }
-    c.fillStyle = "#ffb43a";
-    c.beginPath();
-    c.arc(SX(x), Y(y), Math.max(1, L(40)), 0, Math.PI * 2);
-    c.fill();
-  }
-  for (let i = 0; i < 26; i++) {
-    const x = deco.int(2) ? deco.int(700) + 150 : ARENA_W - 150 - deco.int(700);
-    const y = deco.int(ARENA_H);
-    if (y > RIVER_TOP - 900 && y < RIVER_BOTTOM + 700) continue;
-    for (const [dx, dy, rr, col] of [[-180, 40, 300, "#4f9a3d"], [160, 60, 260, "#4f9a3d"], [0, -60, 340, "#5fb048"], [-60, -120, 160, "#7ccf5c"]] as const) {
-      c.beginPath();
-      c.arc(SX(x + dx), Y(y + dy), L(rr), 0, Math.PI * 2);
-      c.fillStyle = col;
-      c.fill();
+  type Deco = { name: string; x: number; y: number; wd: number; flip: boolean };
+  const items: Deco[] = [];
+  // pines along both side edges
+  for (const side of [0, 1]) {
+    for (let y = 700; y < ARENA_H; y += 1300 + deco.int(900)) {
+      const x = side ? ARENA_W - 500 - deco.int(900) : 500 + deco.int(900);
+      if (!clear(x, y, 300)) continue;
+      items.push({ name: deco.int(4) ? "pine" : "bush", x, y, wd: 1100 + deco.int(400), flip: deco.int(2) === 0 });
     }
   }
+  // small things scattered on the open grass
+  const small = ["tuft", "tuft", "flowers", "rock", "bush", "tuft", "flowers"];
+  for (let i = 0; i < 46; i++) {
+    const x = 400 + deco.int(ARENA_W - 800);
+    const y = 400 + deco.int(ARENA_H - 800);
+    if (!clear(x, y, 400)) continue;
+    const name = small[deco.int(small.length)];
+    items.push({ name, x, y, wd: name === "rock" ? 600 : name === "bush" ? 700 : 520 + deco.int(200), flip: deco.int(2) === 0 });
+  }
+  // crystals near the kings, torches at the bridge heads, banners by the keeps
+  for (const top of [true, false]) {
+    const m = (y: number) => (top ? ARENA_H - y : y);
+    for (const dx of [-3200, 3200]) items.push({ name: "crystal", x: 9000 + dx, y: m(31200), wd: 800, flip: dx > 0 });
+    for (const dx of [-2300, 2300]) items.push({ name: top ? "banner_red" : "banner_blue", x: 9000 + dx, y: m(top ? 30400 : 31000), wd: 650, flip: false });
+  }
+  items.sort((p, q) => p.y - q.y);
+  for (const d of items) put(c, d.name, d.x, d.y, d.wd, d.flip);
 
-  // --- rope bridges (separate layer so clouds drift under them)
-  const b = bgTop.getContext("2d")!;
-  b.lineCap = "round";
+  // --- bridges (separate layer so clouds drift under them), with torches at each end
   for (const bx of BRIDGES) {
-    const y0 = RIVER_TOP - 250;
-    const y1 = RIVER_BOTTOM + 250;
-    // shadow on the clouds
-    b.fillStyle = "rgba(40,70,110,.18)";
-    b.fillRect(SX(bx - BRIDGE_HALF + 100), Y(y0 + 200), L(BRIDGE_HALF * 2 - 100), L(y1 - y0));
-    for (let y = y0, i = 0; y < y1; y += 290, i++) {
-      b.fillStyle = i % 2 ? "#b77d45" : "#c98f55";
-      b.fillRect(SX(bx - BRIDGE_HALF + 50), Y(y), L(BRIDGE_HALF * 2 - 100), L(220));
-      b.fillStyle = "rgba(60,35,15,.35)";
-      b.fillRect(SX(bx - BRIDGE_HALF + 50), Y(y + 180), L(BRIDGE_HALF * 2 - 100), L(40));
-    }
-    b.strokeStyle = "#6b4523";
-    b.lineWidth = Math.max(1.5, L(80));
+    const y0 = RIVER_TOP - 450;
+    const y1 = RIVER_BOTTOM + 350;
+    b.fillStyle = "rgba(40,70,110,.2)";
+    b.fillRect(SX(bx - BRIDGE_HALF + 150), Y(y0 + 300), L(BRIDGE_HALF * 2 - 100), L(y1 - y0));
+    const br = arenaImg("bridge");
+    if (br) b.drawImage(br, SX(bx - BRIDGE_HALF - 200), Y(y0), L(BRIDGE_HALF * 2 + 400), L(y1 - y0));
     for (const side of [-1, 1]) {
-      b.beginPath();
-      b.moveTo(SX(bx + side * (BRIDGE_HALF - 40)), Y(y0));
-      b.quadraticCurveTo(SX(bx + side * (BRIDGE_HALF + 80)), Y((y0 + y1) / 2), SX(bx + side * (BRIDGE_HALF - 40)), Y(y1));
-      b.stroke();
-      for (const py of [y0, y1]) {
-        b.fillStyle = "#7a4f28";
-        b.beginPath();
-        b.arc(SX(bx + side * BRIDGE_HALF), Y(py), Math.max(2, L(150)), 0, Math.PI * 2);
-        b.fill();
-        b.strokeStyle = "#4a2f17";
-        b.lineWidth = Math.max(1, L(40));
-        b.stroke();
-        b.strokeStyle = "#6b4523";
-        b.lineWidth = Math.max(1.5, L(80));
-      }
+      put(b, "torch", bx + side * (BRIDGE_HALF + 450), RIVER_TOP - 250, 450);
+      put(b, "torch", bx + side * (BRIDGE_HALF + 450), RIVER_BOTTOM + 900, 450);
     }
   }
   // warm light from the top and soft dark corners, like the painted art
@@ -383,6 +312,15 @@ function drawClouds(dt: number) {
     const x = cl.x * scale;
     const y = cl.y * scale;
     const s = cl.s * scale;
+    const cimg = arenaImg(cl.v > 250 ? "cloudpuff" : "cloud");
+    if (cimg) {
+      const cw = 2600 * s;
+      const chh = (cw * cimg.naturalHeight) / cimg.naturalWidth;
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(cimg, x - cw / 2, y - chh / 2, cw, chh);
+      ctx.globalAlpha = 1;
+      continue;
+    }
     ctx.fillStyle = "rgba(255,255,255,.88)";
     for (const [dx, dy, rr] of [[-900, 120, 520], [-300, -120, 700], [400, 40, 600], [950, 160, 420]]) {
       ctx.beginPath();
@@ -679,6 +617,13 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
       ctx.ellipse(sx0, sy0, r * 1.5, r * 0.65, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    // painted stone footprint under every tower, in the team's color
+    const base = arenaImg(`base_${e.card === "king" ? "king" : "side"}_${team === BLUE ? "blue" : "red"}`);
+    if (base) {
+      const bw = r * (e.card === "king" ? 2.5 : 2.3);
+      const bh = (bw * base.naturalHeight) / base.naturalWidth * 0.8;
+      ctx.drawImage(base, px - bw / 2, py + r * 0.55 - bh * 0.8, bw, bh);
+    }
     const skinImg = e.card === "king" ? null : towerImage(ui.skins?.[e.owner] ?? "classic");
     const kImg = e.card === "king" ? kingImage(team === BLUE) : null;
     if (kImg) {
@@ -703,14 +648,14 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
       // painted tower skin on a team-colored plinth
       ctx.save();
       ctx.fillStyle = team.dark;
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = base ? 0 : 0.55;
       ctx.beginPath();
       ctx.ellipse(px, py + r * 0.42, r * 1.02, r * 0.4, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.strokeStyle = team.main;
       ctx.lineWidth = Math.max(2, 3 * dpr);
-      ctx.stroke();
+      if (!base) ctx.stroke();
       const hh = r * 2.55;
       const ww = (skinImg.naturalWidth / skinImg.naturalHeight) * hh;
       ctx.drawImage(skinImg, px - ww / 2, py + r * 0.55 - hh, ww, hh);
