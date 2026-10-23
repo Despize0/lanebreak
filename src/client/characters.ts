@@ -52,38 +52,43 @@ interface Look {
   robe?: boolean;
   hover?: boolean; // rides a hover-disc instead of walking
   scarf?: string;
+  noStaff?: boolean; // casts from bare hands
 }
 
 const STEEL = "#b8c0cc";
 const WOOD = "#8a5a2e";
 const LEATHER = "#7b5536";
 
+// Designs follow the painted card art; each one keeps its team color on clothing or gear.
 const RANGER = (p: Pose): Look => ({
-  skin: "#e9b58f", tunic: LEATHER, pants: "#4b5a3a", boots: "#4a3020", head: "hood", headColor: p.team.main,
-  cape: p.team.dark, belt: "#3a2616", weapon: "bow",
+  skin: "#e9b58f", tunic: p.team.main, pants: "#4b5a3a", boots: "#4a3020", head: "hood", headColor: "#3f8f3a",
+  cape: "#2f6e2c", belt: "#5a3a1e", weapon: "bow",
 });
-const TWIN = (p: Pose): Look => ({
-  skin: "#f0c29d", tunic: p.team.main, pants: "#3f4656", boots: "#4a3020", head: "ponytail", headColor: "#b5562b",
-  hair: "#b5562b", belt: "#3a2616", weapon: "bow", scarf: p.team.dark, tall: 0.95,
-});
+const TWIN = (p: Pose): Look => {
+  const hood = p.id % 2 ? "#c2408c" : "#3a6fd0"; // one pink, one blue hood, like the card
+  return {
+    skin: "#f0c29d", tunic: p.team.main, pants: "#3f4656", boots: "#4a3020", head: "hood", headColor: hood,
+    cape: shade(hood, -0.25), belt: "#5a3a1e", weapon: "bow", tall: 0.95,
+  };
+};
 const WARDEN = (p: Pose): Look => ({
-  skin: "#e2ab85", tunic: p.team.main, pants: "#6d7380", boots: "#3a3a44", head: "helm", headColor: STEEL,
+  skin: "#e2ab85", tunic: p.team.main, pants: "#6d7380", boots: "#3a3a44", head: "helm", headColor: p.team.main,
   armor: STEEL, belt: "#4a3020", weapon: "sword", shield: p.team.main, build: 1.1,
 });
 const BRUTE = (p: Pose): Look => ({
-  skin: "#8fa06a", tunic: "#6b4a2e", pants: "#5a4030", boots: "#3e2a1c", head: "horns", headColor: "#e9dcc0",
-  belt: p.team.dark, armor: p.team.main, weapon: "club", build: 1.55, tall: 1.05,
+  skin: "#e2a07a", tunic: "#7a5434", pants: "#5a4030", boots: "#3e2a1c", head: "horns", headColor: "#e9dcc0",
+  beard: "#a4532a", belt: p.team.dark, armor: p.team.main, weapon: "club", build: 1.55, tall: 1.05,
 });
 const MAGE = (p: Pose): Look => ({
-  skin: "#efc6a0", tunic: p.team.main, pants: p.team.dark, boots: "#3a2a20", head: "wizard", headColor: p.team.dark,
-  beard: "#ece8e0", belt: "#ffcf5a", weapon: "staff", robe: true,
+  skin: "#efc6a0", tunic: p.team.main, pants: p.team.dark, boots: "#3a2a20", head: "hood", headColor: shade(p.team.dark, -0.25),
+  beard: "#3a2a22", belt: "#ffcf5a", weapon: "staff", robe: true, noStaff: true,
 });
 const BOMBER = (p: Pose): Look => ({
-  skin: "#d9a07a", tunic: "#6e5440", pants: "#4a4a52", boots: "#3a2a20", head: "goggles", headColor: "#5a3a24",
-  hair: "#2e2a26", belt: "#2a2018", scarf: p.team.main, weapon: "bomb", build: 1.1,
+  skin: "#e0a77f", tunic: "#6e5440", pants: "#4a4a52", boots: "#3a2a20", head: "goggles", headColor: "#c8402e",
+  hair: "#c8402e", belt: "#2a2018", scarf: p.team.main, weapon: "bomb", build: 1.1,
 });
 const RIDER = (p: Pose): Look => ({
-  skin: "#e7b48e", tunic: p.team.main, pants: "#3f4656", boots: "#3a2a20", head: "aviator", headColor: "#6b4a2e",
+  skin: "#e7b48e", tunic: p.team.main, pants: "#3f4656", boots: "#3a2a20", head: "aviator", headColor: "#d9822b",
   scarf: p.team.light, belt: "#3a2616", weapon: "lance", hover: true, armor: STEEL,
 });
 
@@ -273,10 +278,14 @@ function humanoid(c: Ctx, r: number, p: Pose, L: Look) {
     case "staff": {
       const sx = front.h.x;
       const sy = front.h.y;
-      limb(c, sx - u * 0.2, sy + u * 3.4, sx + u * 0.15, sy - u * 2.4, u * 0.32, WOOD, ol * 0.8);
+      if (!L.noStaff) limb(c, sx - u * 0.2, sy + u * 3.4, sx + u * 0.15, sy - u * 2.4, u * 0.32, WOOD, ol * 0.8);
       drawArm(shFront, front);
-      const ox = sx + u * 0.2;
-      const oy = sy - u * 2.9;
+      if (L.noStaff) {
+        glow(c, back.h.x, back.h.y, u * 1.4, "#7fe7ff", 0.55);
+        blob(c, back.h.x, back.h.y, u * 0.35, u * 0.35, "#e6fbff", 0);
+      }
+      const ox = L.noStaff ? sx + u * 0.5 : sx + u * 0.2;
+      const oy = L.noStaff ? sy - u * 0.4 : sy - u * 2.9;
       const charge = atk < 0.4 ? 1.7 : 1;
       glow(c, ox, oy, u * 2.2 * charge, "#7fe7ff", 0.7);
       blob(c, ox, oy, u * 0.6 * charge, u * 0.6 * charge, "#e6fbff", 0);
@@ -295,7 +304,7 @@ function humanoid(c: Ctx, r: number, p: Pose, L: Look) {
     }
     case "bomb":
       drawArm(shFront, front);
-      if (atk >= 0.3) bomb(c, front.h.x + u * 0.3, front.h.y - u * 0.5, u, ol, p.t);
+      if (atk >= 0.3) bomb(c, front.h.x + u * 0.7, front.h.y - u * 0.4, u * 2.0, ol, p.t);
       break;
     case "lance": {
       const thrust = atk < 0.3 ? Math.sin((atk / 0.3) * Math.PI) * u * 1.6 : 0;
@@ -317,6 +326,7 @@ function head(c: Ctx, L: Look, hy: number, u: number, ol: number, p: Pose) {
   const hr = u * 1.22;
   // hair / hood back layer
   if (L.head === "hood") blob(c, hx - u * 0.15, hy - u * 0.1, hr * 1.22, hr * 1.25, L.headColor, ol);
+  if (L.head === "horns" && L.beard) blob(c, hx + u * 0.35, hy + u * 0.75, hr * 0.95, hr * 0.85, L.beard, ol); // big viking beard
   if (L.head === "ponytail" || L.head === "goggles") {
     const sway = Math.sin(p.t * 7 + p.id) * u * 0.25;
     if (L.head === "ponytail") limb(c, hx - u * 0.9, hy - u * 0.4, hx - u * 2.0 - sway, hy + u * 1.3, u * 0.7, L.hair!, ol);
@@ -325,7 +335,7 @@ function head(c: Ctx, L: Look, hy: number, u: number, ol: number, p: Pose) {
   // face
   blob(c, hx + (L.head === "hood" ? u * 0.25 : 0), hy + u * 0.05, L.head === "hood" ? hr * 0.82 : hr, L.head === "hood" ? hr * 0.9 : hr * 1.05, L.skin, ol);
   // ear
-  if (L.head !== "hood" && L.head !== "helm" && L.head !== "aviator") blob(c, hx - u * 0.35, hy + u * 0.1, u * 0.25, u * 0.35, shade(L.skin, -0.05), ol * 0.7);
+  if (L.head !== "hood" && L.head !== "helm" && L.head !== "aviator" && L.head !== "horns") blob(c, hx - u * 0.35, hy + u * 0.1, u * 0.25, u * 0.35, shade(L.skin, -0.05), ol * 0.7);
   // eye, brow, nose
   const ex = hx + u * 0.62;
   const ey = hy - u * 0.05;
@@ -356,6 +366,9 @@ function head(c: Ctx, L: Look, hy: number, u: number, ol: number, p: Pose) {
 
   switch (L.head) {
     case "hood":
+      if (L.beard) {
+        slab(c, [hx + u * 0.1, hy + u * 0.3, hx + u * 1.05, hy + u * 0.35, hx + u * 0.75, hy + u * 1.3, hx + u * 0.35, hy + u * 1.5], L.beard, ol * 0.8);
+      }
       c.strokeStyle = shade(L.headColor, -0.35);
       c.lineWidth = u * 0.35;
       c.beginPath();
@@ -377,7 +390,7 @@ function head(c: Ctx, L: Look, hy: number, u: number, ol: number, p: Pose) {
       c.restore();
       limb(c, hx + u * 0.75, hy - u * 0.2, hx + u * 0.75, hy + u * 0.55, u * 0.22, L.headColor, ol * 0.6);
       // plume
-      c.strokeStyle = p.team.main;
+      c.strokeStyle = "#ffcf5a";
       c.lineWidth = u * 0.55;
       c.beginPath();
       c.moveTo(hx - u * 0.1, hy - hr * 1.1);
@@ -396,7 +409,23 @@ function head(c: Ctx, L: Look, hy: number, u: number, ol: number, p: Pose) {
       slab(c, [hx + u * 0.05, hy + u * 0.35, hx + u * 1.05, hy + u * 0.4, hx + u * 0.45, hy + u * 2.1], L.beard!, ol * 0.8);
       break;
     }
-    case "horns":
+    case "horns": {
+      // steel viking helmet with a nose guard
+      c.save();
+      c.beginPath();
+      c.arc(hx, hy - u * 0.15, hr * 1.06, Math.PI, 0);
+      c.lineTo(hx + hr * 1.06, hy - u * 0.05);
+      c.lineTo(hx - hr * 1.06, hy - u * 0.05);
+      c.closePath();
+      c.fillStyle = blobGrad(c, hx, hy - u * 0.6, hr, "#8f96a3");
+      c.fill();
+      c.lineWidth = ol;
+      c.strokeStyle = "#2c2f38";
+      c.stroke();
+      c.restore();
+      c.fillStyle = "#c9a24a";
+      c.fillRect(hx - hr * 1.06, hy - u * 0.3, hr * 2.12, u * 0.28);
+      limb(c, hx + u * 0.7, hy - u * 0.3, hx + u * 0.75, hy + u * 0.35, u * 0.22, "#8f96a3", ol * 0.6);
       for (const s of [-1, 1]) {
         c.strokeStyle = shade(L.headColor, -0.5);
         c.lineWidth = u * 0.6;
@@ -409,7 +438,20 @@ function head(c: Ctx, L: Look, hy: number, u: number, ol: number, p: Pose) {
         c.stroke();
       }
       break;
+    }
     case "goggles":
+      // red cap with a small brim, goggles pushed onto the face
+      c.save();
+      c.beginPath();
+      c.arc(hx - u * 0.05, hy - u * 0.35, hr * 1.02, Math.PI * 1.02, Math.PI * 1.98);
+      c.closePath();
+      c.fillStyle = blobGrad(c, hx, hy - u * 0.8, hr, L.headColor);
+      c.fill();
+      c.lineWidth = ol;
+      c.strokeStyle = shade(L.headColor, -0.6);
+      c.stroke();
+      c.restore();
+      blob(c, hx + u * 1.0, hy - u * 0.42, u * 0.65, u * 0.16, shade(L.headColor, -0.15), ol * 0.7);
       c.fillStyle = "#3a2a20";
       c.fillRect(hx - u * 1.1, hy - u * 0.45, u * 2.2, u * 0.35);
       for (const gx of [hx + u * 0.55, hx + u * 0.05]) {
@@ -463,13 +505,10 @@ function shieldDraw(c: Ctx, x: number, y: number, u: number, color: string, ol: 
   c.beginPath();
   c.ellipse(x, y, u * 0.92, u * 1.27, 0, 0, Math.PI * 2);
   c.stroke();
-  // emblem: a little wing
-  c.fillStyle = shade(color, 0.6);
-  c.beginPath();
-  c.moveTo(x - u * 0.45, y + u * 0.1);
-  c.quadraticCurveTo(x, y - u * 0.9, x + u * 0.45, y - u * 0.2);
-  c.quadraticCurveTo(x + u * 0.05, y - u * 0.1, x - u * 0.45, y + u * 0.1);
-  c.fill();
+  // emblem: gold cross
+  c.fillStyle = "#ffcf5a";
+  c.fillRect(x - u * 0.16, y - u * 0.75, u * 0.32, u * 1.5);
+  c.fillRect(x - u * 0.55, y - u * 0.25, u * 1.1, u * 0.3);
 }
 
 function club(c: Ctx, hx: number, hy: number, a: number, u: number, ol: number) {
@@ -497,7 +536,7 @@ export function bomb(c: Ctx, x: number, y: number, u: number, ol: number, t: num
 // ------------------------------------------------------------------ creatures
 function golem(c: Ctx, r: number, p: Pose, crystal: boolean) {
   const ol = Math.max(0.8, r * 0.04);
-  const stone = crystal ? "#6c6880" : "#8c8892";
+  const stone = crystal ? "#5e6b8e" : "#a08f7e"; // blue-grey crystal giant / warm sandstone golem
   const w = p.moving ? p.t * (crystal ? 3.2 : 4.5) + p.id : 0;
   const step = p.moving ? Math.sin(w) : 0;
   const sway = step * r * 0.04;
@@ -516,7 +555,32 @@ function golem(c: Ctx, r: number, p: Pose, crystal: boolean) {
   blob(c, sway, by, r * 0.95, r * 0.82, stone, ol);
   blob(c, sway - r * 0.2, by - r * 0.45, r * 0.6, r * 0.42, shade(stone, 0.1), ol);
   blob(c, sway + r * 0.35, by + r * 0.3, r * 0.5, r * 0.38, shade(stone, -0.05), ol);
-  // cracks
+  // team-colored strap across the chest
+  c.save();
+  c.beginPath();
+  c.ellipse(sway, by, r * 0.95, r * 0.82, 0, 0, Math.PI * 2);
+  c.clip();
+  c.strokeStyle = shade(p.team.main, -0.1);
+  c.lineWidth = r * 0.2;
+  c.beginPath();
+  c.moveTo(sway - r * 0.9, by - r * 0.55);
+  c.lineTo(sway + r * 0.9, by + r * 0.5);
+  c.stroke();
+  c.restore();
+  // cracks (the sandstone golem's glow like embers)
+  if (!crystal) {
+    c.save();
+    c.shadowColor = "#ff8a2a";
+    c.shadowBlur = r * 0.25;
+    c.strokeStyle = "#ffb04a";
+    c.lineWidth = Math.max(0.8, r * 0.05);
+    c.beginPath();
+    c.moveTo(sway - r * 0.55, by + r * 0.1);
+    c.lineTo(sway - r * 0.3, by + r * 0.25);
+    c.lineTo(sway - r * 0.38, by + r * 0.5);
+    c.stroke();
+    c.restore();
+  }
   c.strokeStyle = shade(stone, -0.55);
   c.lineWidth = Math.max(0.7, r * 0.035);
   c.beginPath();
@@ -536,17 +600,19 @@ function golem(c: Ctx, r: number, p: Pose, crystal: boolean) {
       c.restore();
     }
   } else {
-    blob(c, sway - r * 0.15, by - r * 0.78, r * 0.45, r * 0.14, "#5e9e44", 0);
-    blob(c, sway + r * 0.35, by - r * 0.62, r * 0.2, r * 0.09, "#6db04f", 0);
+    blob(c, sway - r * 0.15, by - r * 0.78, r * 0.45, r * 0.14, "#6a9a48", 0);
   }
-  // glowing core + eyes
-  glow(c, sway + r * 0.2, by + r * 0.05, r * (crystal ? 0.7 : 0.45), p.team.main, 0.8);
-  blob(c, sway + r * 0.2, by + r * 0.05, r * (crystal ? 0.2 : 0.13), r * (crystal ? 0.2 : 0.13), p.team.light, 0);
+  // glowing core + eyes (crystal giant glows in team color, the golem's eyes burn orange)
+  glow(c, sway + r * 0.2, by + r * 0.05, r * (crystal ? 0.7 : 0.4), p.team.main, 0.8);
+  blob(c, sway + r * 0.2, by + r * 0.05, r * (crystal ? 0.2 : 0.12), r * (crystal ? 0.2 : 0.12), p.team.light, 0);
+  const eye = crystal ? p.team.main : "#ff7a1a";
   for (const ex of [0.38, 0.62]) {
-    glow(c, sway + ex * r, by - r * 0.42, r * 0.16, p.team.main, 0.9);
-    c.fillStyle = shade(p.team.light, 0.5);
+    glow(c, sway + ex * r, by - r * 0.42, r * 0.17, eye, 0.95);
+    c.fillStyle = crystal ? shade(p.team.light, 0.5) : "#ffe0a0";
     c.fillRect(sway + ex * r - r * 0.06, by - r * 0.45, r * 0.12, r * 0.06);
   }
+  // heavy brow
+  blob(c, sway + r * 0.5, by - r * 0.55, r * 0.35, r * 0.1, shade(stone, -0.2), 0);
   // front arm
   blob(c, r * 0.9 + sway, by - r * 0.2, r * 0.38, r * 0.34, stone, ol);
   blob(c, r * 1.05 + sway, armY(1), r * 0.4, r * 0.36, shade(stone, 0.05), ol);
@@ -602,7 +668,7 @@ function wyvern(c: Ctx, r: number, p: Pose) {
   const ol = Math.max(0.7, r * 0.045);
   const flap = Math.sin(p.t * 11 + p.id);
   const cy = -r * 0.6;
-  const body = p.team.main;
+  const body = "#6a4cae";
   // tail
   c.strokeStyle = shade(body, -0.6);
   c.lineWidth = r * 0.3;
@@ -615,18 +681,18 @@ function wyvern(c: Ctx, r: number, p: Pose) {
   c.stroke();
   slab(c, [-r * 1.75, cy - r * 0.35, -r * 1.55, cy - r * 0.05, -r * 2.05, cy - r * 0.05], shade(body, -0.2), ol * 0.7);
   // far wing
-  wing(c, -r * 0.05, cy - r * 0.2, r * 1.5, -0.8 - flap * 0.6, shade(p.team.dark, -0.15), ol);
+  wing(c, -r * 0.05, cy - r * 0.2, r * 1.5, -0.8 - flap * 0.6, shade(p.team.main, -0.3), ol);
   // body
   blob(c, 0, cy, r * 0.8, r * 0.5, body, ol);
-  blob(c, r * 0.1, cy + r * 0.2, r * 0.55, r * 0.22, "#f3e6c8", 0);
+  blob(c, r * 0.1, cy + r * 0.2, r * 0.55, r * 0.22, "#f0c868", 0);
   // neck + head
   limb(c, r * 0.5, cy - r * 0.1, r * 0.9, cy - r * 0.5, r * 0.32, body, ol);
   blob(c, r * 1.05, cy - r * 0.6, r * 0.36, r * 0.28, body, ol);
   slab(c, [r * 1.25, cy - r * 0.68, r * 1.75, cy - r * 0.55, r * 1.25, cy - r * 0.42], shade(body, 0.1), ol * 0.8);
   slab(c, [r * 0.85, cy - r * 0.8, r * 0.5, cy - r * 1.15, r * 0.95, cy - r * 0.86], "#efe6d0", ol * 0.6);
-  blob(c, r * 1.15, cy - r * 0.7, r * 0.08, r * 0.08, "#ffe066", 0);
+  blob(c, r * 1.15, cy - r * 0.7, r * 0.1, r * 0.09, "#9dff5a", 0);
   // near wing
-  wing(c, r * 0.1, cy - r * 0.15, r * 1.7, -1.0 - flap * 0.8, p.team.dark, ol);
+  wing(c, r * 0.1, cy - r * 0.15, r * 1.7, -1.0 - flap * 0.8, p.team.main, ol);
 }
 
 function wing(c: Ctx, x: number, y: number, len: number, a: number, color: string, ol: number) {
@@ -668,7 +734,15 @@ function wisp(c: Ctx, r: number, p: Pose) {
   g.addColorStop(1, shade(p.team.main, 0, 0));
   c.fillStyle = g;
   c.fill();
-  blob(c, r * 0.1, cy, r * 0.62, r * 0.62, shade(p.team.light, 0.55), 0);
+  for (const ex of [-0.3, 0.45]) {
+    c.fillStyle = shade(p.team.light, 0.35);
+    c.beginPath();
+    c.moveTo(r * (ex - 0.18), cy - r * 0.38);
+    c.lineTo(r * (ex + 0.02), cy - r * 0.95);
+    c.lineTo(r * (ex + 0.2), cy - r * 0.4);
+    c.fill();
+  }
+  blob(c, r * 0.1, cy, r * 0.66, r * 0.62, shade(p.team.light, 0.55), 0);
   c.fillStyle = shade(p.team.dark, -0.4);
   for (const ex of [0.12, 0.42]) {
     c.beginPath();
@@ -736,6 +810,9 @@ function cannon(c: Ctx, r: number, p: Pose) {
   c.lineWidth = ol;
   c.strokeStyle = "#16181e";
   c.stroke();
+  c.fillStyle = "#d9a83a";
+  c.fillRect(-r * 0.42, -r * 0.29, r * 0.12, r * 0.58);
+  c.fillRect(r * 0.55, -r * 0.29, r * 0.1, r * 0.58);
   c.fillStyle = p.team.main;
   c.fillRect(-r * 0.2, -r * 0.29, r * 0.18, r * 0.58);
   c.fillStyle = "#16181e";

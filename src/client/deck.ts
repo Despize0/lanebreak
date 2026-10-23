@@ -1,7 +1,7 @@
 // Deck builder: pick 8 of the 16 cards. Saved in this browser, and to the account when signed in.
 
 import { CARD_LIST, CARDS, DEFAULT_DECK, DECK_SIZE, isValidDeck, type CardDef } from "../sim/cards";
-import { cardArt } from "./sprites";
+import { PORTRAITS, cardType } from "./portraits";
 import { getToken, getUser, onAccountChange } from "./account";
 import { sfx } from "./audio";
 
@@ -70,20 +70,9 @@ function stats(d: CardDef): string {
 
 function cardTile(id: string, inDeck: boolean): string {
   const d = CARDS[id];
-  return `<button type="button" class="dcard${inDeck ? " in" : ""}${focus === id ? " focus" : ""}" data-card="${id}" aria-pressed="${inDeck}" aria-label="${d.name}, ${d.cost} aether${inDeck ? ", in deck" : ""}">
-    <span class="cost">${d.cost}</span><span class="art" data-art="${id}"></span><span class="nm">${d.name}</span>
+  return `<button type="button" class="dcard${inDeck ? " in" : ""}${focus === id ? " focus" : ""}" data-card="${id}" data-type="${cardType(id)}" style="--art:url('${PORTRAITS[id]}')" aria-pressed="${inDeck}" aria-label="${d.name}, ${d.cost} aether${inDeck ? ", in deck" : ""}">
+    <span class="cost">${d.cost}</span><span class="nm">${d.name}</span>
   </button>`;
-}
-
-function paintArt(root: HTMLElement) {
-  root.querySelectorAll<HTMLElement>("[data-art]").forEach((el) => {
-    const src = cardArt(el.dataset.art!);
-    const cv = document.createElement("canvas");
-    cv.width = src.width;
-    cv.height = src.height;
-    cv.getContext("2d")!.drawImage(src, 0, 0);
-    el.replaceChildren(cv);
-  });
 }
 
 function render() {
@@ -92,8 +81,6 @@ function render() {
     draft[i] ? cardTile(draft[i], true) : `<div class="dcard empty" aria-hidden="true"><span class="nm">Empty</span></div>`,
   ).join("");
   $("deckPool").innerHTML = CARD_LIST.filter((c) => !draft.includes(c)).map((c) => cardTile(c, false)).join("");
-  paintArt(slots);
-  paintArt($("deckPool"));
   $("deckAvg").textContent = draft.length ? `Average cost ${avg(draft).toFixed(1)}` : "Pick 8 cards";
   $("deckCount").textContent = `${draft.length}/${DECK_SIZE}`;
   const save = $<HTMLButtonElement>("deckSave");

@@ -71,21 +71,25 @@ button, input { font-family: inherit; }
 .tray { display: flex; flex-direction: column; gap: 8px; }
 .hand { display: grid; grid-template-columns: 50px repeat(4, minmax(0, 1fr)); gap: 6px; align-items: end; }
 .next { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; letter-spacing: .14em; color: var(--muted); font-weight: 800; }
-.next .mini { width: 42px; height: 50px; border-radius: 8px; background: var(--night-2); border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden; }
-.next .mini canvas { width: 38px; height: 38px; opacity: .8; }
+.next .mini { width: 42px; height: 52px; border-radius: 8px; border: 2px solid var(--frame, #4b5a99); background: var(--art, none) 22% 0% / cover no-repeat, var(--night-2); filter: saturate(.7) brightness(.8); }
+/* card frames follow the art sheet: tanks / buildings / air in blue, troops orange, spells pink */
+[data-type="tank"], [data-type="building"] { --frame: #3ea0ff; --frame-hi: #a8d8ff; }
+[data-type="air"] { --frame: #3fd0f0; --frame-hi: #b8f2ff; }
+[data-type="troop"] { --frame: #f0982e; --frame-hi: #ffd08a; }
+[data-type="spell"] { --frame: #e04f92; --frame-hi: #ffb0d4; }
 .card {
-  position: relative; appearance: none; border: 2px solid #4b5a99; color: var(--text);
-  background: linear-gradient(180deg, #34428a 0%, #222b5c 100%);
-  border-radius: 10px; padding: 4px 3px 4px; height: 84px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
-  cursor: pointer; overflow: hidden; touch-action: none; box-shadow: 0 3px 0 #10152e;
-  transition: transform .12s ease, border-color .12s ease, filter .12s ease;
+  position: relative; appearance: none; border: 2px solid var(--frame, #4b5a99); color: var(--text);
+  background: var(--art, none) 22% 0% / cover no-repeat, linear-gradient(180deg, #34428a 0%, #222b5c 100%);
+  border-radius: 10px; padding: 0 3px 4px; height: 88px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  cursor: pointer; overflow: hidden; touch-action: none; box-shadow: 0 3px 0 #10152e, inset 0 0 0 1px rgba(255,255,255,.12);
+  transition: transform .12s ease, border-color .12s ease, filter .12s ease, box-shadow .12s ease;
 }
-.card canvas { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); width: 56px; height: 56px; pointer-events: none; }
-.card .nm { position: relative; font-size: 12px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-shadow: 0 1px 0 #0b0f22; }
-.card .cost { position: absolute; top: 3px; left: 3px; z-index: 1; width: 21px; height: 21px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e3a6ff, var(--aether) 60%, #6a2aa8); font-family: var(--font-display); font-size: 13px; display: grid; place-items: center; color: #fff; text-shadow: 0 1px 0 #3c1066; box-shadow: 0 1px 0 #2a0a4a; }
-.card .fill { position: absolute; inset: auto 0 0 0; height: 0; background: rgba(182, 92, 255, .22); pointer-events: none; }
-.card.poor { filter: saturate(.35) brightness(.75); }
-.card.sel { border-color: var(--gold); transform: translateY(-7px); box-shadow: 0 6px 14px rgba(255,201,74,.25), 0 3px 0 #10152e; }
+.card::after, .dcard::after { content: ""; position: absolute; inset: auto 0 0 0; height: 46%; background: linear-gradient(180deg, rgba(10,14,32,0), rgba(10,14,32,.92)); pointer-events: none; }
+.card .nm { position: relative; z-index: 1; font-family: var(--font-display); font-size: 12px; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-shadow: 0 1px 0 #0b0f22, 0 0 6px rgba(0,0,0,.6); }
+.card .cost { position: absolute; top: 1px; left: 1px; z-index: 2; width: 27px; height: 27px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e3a6ff, var(--aether) 60%, #6a2aa8); border: 2px solid #f4e9ff; box-sizing: border-box; font-family: var(--font-display); font-size: 13px; display: grid; place-items: center; color: #fff; text-shadow: 0 1px 0 #3c1066; box-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.card .fill { position: absolute; z-index: 1; inset: auto 0 0 0; height: 0; background: rgba(182, 92, 255, .25); pointer-events: none; mix-blend-mode: screen; }
+.card.poor { filter: saturate(.25) brightness(.62); }
+.card.sel { border-color: #fff; transform: translateY(-8px); box-shadow: 0 0 0 2px var(--gold), 0 8px 18px rgba(255,201,74,.35), 0 3px 0 #10152e; }
 .card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .aether { display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: center; }
 .aether .num { font-family: var(--font-display); font-size: 24px; color: #e6b8ff; text-align: center; font-variant-numeric: tabular-nums; text-shadow: 0 0 10px rgba(182,92,255,.6); }
@@ -166,14 +170,13 @@ input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
 .deck-meta { font-size: 13px; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
 .deck-meta b { color: var(--text); }
 .deck-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.dcard { position: relative; appearance: none; border: 2px solid #4b5a99; border-radius: 9px; height: 78px; padding: 0 2px 3px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; color: var(--text); background: linear-gradient(180deg, #34428a, #222b5c); cursor: pointer; overflow: hidden; font-family: var(--font-ui); }
-.dcard .art { position: absolute; left: 50%; top: 2px; transform: translateX(-50%); width: 50px; height: 50px; pointer-events: none; }
-.dcard .art canvas { width: 50px; height: 50px; }
-.dcard .nm { position: relative; font-size: 11px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-shadow: 0 1px 0 #0b0f22; }
-.dcard .cost { position: absolute; top: 2px; left: 2px; z-index: 1; width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e3a6ff, var(--aether) 60%, #6a2aa8); font-family: var(--font-display); font-size: 11px; display: grid; place-items: center; color: #fff; }
-.dcard.in { border-color: var(--gold); }
-.dcard.focus { box-shadow: 0 0 0 2px rgba(255,255,255,.7); }
-.dcard.empty { border-style: dashed; background: transparent; color: var(--muted); cursor: default; justify-content: center; }
+.dcard { position: relative; appearance: none; border: 2px solid var(--frame, #4b5a99); border-radius: 9px; height: 84px; padding: 0 2px 3px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; color: var(--text); background: var(--art, none) 22% 0% / cover no-repeat, linear-gradient(180deg, #34428a, #222b5c); cursor: pointer; overflow: hidden; font-family: var(--font-ui); }
+.dcard .nm { position: relative; z-index: 1; font-family: var(--font-display); font-size: 11px; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-shadow: 0 1px 0 #0b0f22; }
+.dcard .cost { position: absolute; top: 1px; left: 1px; z-index: 2; width: 25px; height: 25px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e3a6ff, var(--aether) 60%, #6a2aa8); border: 2px solid #f4e9ff; box-sizing: border-box; font-family: var(--font-display); font-size: 11px; display: grid; place-items: center; color: #fff; }
+.dcard.in { box-shadow: 0 0 0 2px var(--gold); }
+.dcard.focus { outline: 2px solid #fff; outline-offset: 1px; }
+.dcard.empty { border-style: dashed; border-color: #4b5a99; background: transparent; color: var(--muted); cursor: default; justify-content: center; }
+.dcard.empty::after { display: none; }
 .dcard:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .deck-info { background: var(--night-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; text-align: left; font-size: 13px; line-height: 1.35; min-height: 74px; }
 .deck-info b { font-family: var(--font-display); font-weight: 400; font-size: 17px; }

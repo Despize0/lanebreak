@@ -66,10 +66,11 @@ export function toWorld(clientX: number, clientY: number) {
 let bgKey = "";
 const bgBase = document.createElement("canvas");
 const bgTop = document.createElement("canvas");
-const GRASS = "#7cc35a";
-const GRASS_DARK = "#6bb04c";
-const PATH = "#e2c48a";
-const PATH_EDGE = "#c2a066";
+const vignette = document.createElement("canvas");
+const GRASS = "#6fbf4e";
+const GRASS_DARK = "#5aa63e";
+const PATH = "#bdb8ac"; // cobblestone
+const PATH_EDGE = "#8f8470";
 
 const edgeTop = (x: number) => RIVER_TOP + 90 * Math.sin(x * 0.0019 + 0.7) + 60 * Math.sin(x * 0.0053 + 2.1);
 const edgeBottom = (x: number) => RIVER_BOTTOM + 80 * Math.sin(x * 0.0023 + 1.9) + 50 * Math.sin(x * 0.0061);
@@ -154,39 +155,82 @@ function buildScenery() {
   for (let x = 0; x <= ARENA_W; x += 200) c.lineTo(SX(x), Y(edgeBottom(x) + 60));
   c.stroke();
 
+  // painterly grass: soft light and dark patches so the field isn't flat
+  const patch = new Rng(31);
+  for (let i = 0; i < 70; i++) {
+    const x = patch.int(ARENA_W);
+    const y = patch.int(ARENA_H);
+    if (y > RIVER_TOP - 300 && y < RIVER_BOTTOM + 300) continue;
+    const rr = L(900 + patch.int(1800));
+    const g = c.createRadialGradient(SX(x), Y(y), 0, SX(x), Y(y), rr);
+    const light = patch.int(2) === 0;
+    g.addColorStop(0, light ? "rgba(190,240,120,.16)" : "rgba(30,80,30,.14)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = g;
+    c.fillRect(SX(x) - rr, Y(y) - rr, rr * 2, rr * 2);
+  }
+
   // subtle tile checker for placement readability
-  c.fillStyle = "rgba(40,90,30,.07)";
+  c.fillStyle = "rgba(40,90,30,.06)";
   for (let ty = 0; ty < 32; ty++) {
     if (ty === 15 || ty === 16) continue;
     for (let tx = (ty % 2); tx < 18; tx += 2) c.fillRect(SX(tx * 1000), Y(ty * 1000), Math.ceil(L(1000)), Math.ceil(L(1000)));
   }
 
-  // dirt paths: bridge → side tower → king, on both islands
-  c.lineCap = "round";
-  c.lineJoin = "round";
-  const pathStroke = (pts: number[][], width: number) => {
-    for (const [col, extra] of [[PATH_EDGE, 120], [PATH, 0]] as const) {
-      c.strokeStyle = col;
-      c.lineWidth = L(width + extra);
-      c.beginPath();
-      pts.forEach(([x, y], i) => (i ? c.lineTo(SX(x), Y(y)) : c.moveTo(SX(x), Y(y))));
-      c.stroke();
+  // cobblestone paths: bridge → side tower → king, on both islands.
+  // Drawn as a mask on a scratch canvas, then stones are painted inside the mask.
+  const paths = document.createElement("canvas");
+  paths.width = w;
+  paths.height = h;
+  const pc = paths.getContext("2d")!;
+  pc.lineCap = "round";
+  pc.lineJoin = "round";
+  const shapes = (ctx2: CanvasRenderingContext2D, grow: number, color: string) => {
+    ctx2.strokeStyle = color;
+    ctx2.fillStyle = color;
+    for (const flipY of [false, true]) {
+      const m = (y: number) => (flipY ? ARENA_H - y : y);
+      for (const bx of BRIDGES) {
+        ctx2.lineWidth = L(1300 + grow);
+        ctx2.beginPath();
+        [[bx, m(RIVER_BOTTOM + 100)], [bx, m(25500)], [9000, m(29500)]].forEach(([x, y], i) =>
+          i ? ctx2.lineTo(SX(x), Y(y)) : ctx2.moveTo(SX(x), Y(y)));
+        ctx2.stroke();
+      }
+      for (const [x, y, r] of [[3500, 25500, 1900], [14500, 25500, 1900], [9000, 29500, 2300]]) {
+        ctx2.beginPath();
+        ctx2.ellipse(SX(x), Y(m(y)), L(r + grow / 2), L(r * 0.8 + grow / 2), 0, 0, Math.PI * 2);
+        ctx2.fill();
+      }
     }
   };
-  for (const flipY of [false, true]) {
-    const m = (y: number) => (flipY ? ARENA_H - y : y);
-    for (const bx of BRIDGES) pathStroke([[bx, m(RIVER_BOTTOM + 100)], [bx, m(25500)], [9000, m(29500)]], 1300);
-    for (const [x, y, r] of [[3500, 25500, 1900], [14500, 25500, 1900], [9000, 29500, 2300]]) {
-      c.beginPath();
-      c.ellipse(SX(x), Y(m(y)), L(r), L(r * 0.8), 0, 0, Math.PI * 2);
-      c.fillStyle = PATH_EDGE;
-      c.fill();
-      c.beginPath();
-      c.ellipse(SX(x), Y(m(y)), L(r - 120), L(r * 0.8 - 120), 0, 0, Math.PI * 2);
-      c.fillStyle = PATH;
-      c.fill();
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  shapes(c, 220, "rgba(60,50,35,.45)"); // soft dark edge
+  shapes(pc, 0, PATH);
+  pc.globalCompositeOperation = "source-atop";
+  const cob = new Rng(57);
+  const step = 360;
+  for (let y = 0; y < ARENA_H; y += step) {
+    for (let x = (y / step) % 2 ? step / 2 : 0; x < ARENA_W; x += step) {
+      const jx = x + cob.int(90) - 45;
+      const jy = y + cob.int(90) - 45;
+      const rx = L(150 + cob.int(40));
+      const ry = L(120 + cob.int(30));
+      const tone = 0.85 + cob.int(30) / 100;
+      pc.beginPath();
+      pc.ellipse(SX(jx), Y(jy), rx, ry, 0, 0, Math.PI * 2);
+      const g = pc.createLinearGradient(0, Y(jy) - ry, 0, Y(jy) + ry);
+      g.addColorStop(0, `rgba(${Math.round(214 * tone)},${Math.round(210 * tone)},${Math.round(200 * tone)},1)`);
+      g.addColorStop(1, `rgba(${Math.round(150 * tone)},${Math.round(146 * tone)},${Math.round(138 * tone)},1)`);
+      pc.fillStyle = g;
+      pc.fill();
+      pc.strokeStyle = "rgba(80,68,52,.45)";
+      pc.lineWidth = Math.max(0.6, L(25));
+      pc.stroke();
     }
   }
+  c.drawImage(paths, 0, 0);
 
   // decorations: grass tufts, flowers, pebbles, bushes (kept off paths and the gap)
   const deco = new Rng(7);
@@ -277,6 +321,20 @@ function buildScenery() {
       }
     }
   }
+  // warm light from the top and soft dark corners, like the painted art
+  vignette.width = w;
+  vignette.height = h;
+  const v = vignette.getContext("2d")!;
+  const vg = v.createRadialGradient(w * 0.45, h * 0.42, Math.min(w, h) * 0.35, w * 0.5, h * 0.5, Math.max(w, h) * 0.75);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(12,18,40,.32)");
+  v.fillStyle = vg;
+  v.fillRect(0, 0, w, h);
+  const warm = v.createLinearGradient(0, 0, w, h);
+  warm.addColorStop(0, "rgba(255,230,170,.10)");
+  warm.addColorStop(0.5, "rgba(255,230,170,0)");
+  v.fillStyle = warm;
+  v.fillRect(0, 0, w, h);
   bgKey = `${w}x${h}`;
 }
 
@@ -545,6 +603,7 @@ export function draw(game: GameState, ui: UiState, now: number) {
   drawBolts(now);
   drawRings(now);
   drawParticles(dt);
+  ctx.drawImage(vignette, 0, 0);
   drawFloaters(now);
   drawMarks(ui, now);
   if (ui.selected && ui.ghost) drawGhost(game, ui);
@@ -571,7 +630,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
     if (e.card === "king") drawKeep(ctx, px, py, r, team, e.active, t);
     else drawLighthouse(ctx, px, py, r, team, e.active, t);
     // keep the bar on screen for the rival's king at the very top edge
-    const top = Math.max(py - r * (e.card === "king" ? 1.95 : 2.05), 16 * dpr);
+    const top = Math.max(py - r * (e.card === "king" ? 2.05 : 2.45), 16 * dpr);
     towerBar(px, top, r * 1.25, e.hp, e.maxHp, team);
     return;
   }
@@ -677,7 +736,7 @@ function drawMeteor(e: Entity, alpha: number, t: number) {
   ctx.restore();
   const sx = tx - k * canvas.width * 0.25;
   const sy = ty - k * canvas.height * 0.45;
-  drawFireball(ctx, sx, sy, L(650), tx - sx + 1, ty - sy + 1, t);
+  drawFireball(ctx, sx, sy, L(650), tx - sx + 1, ty - sy + 1, t, true);
 }
 
 function drawProjectiles(game: GameState, now: number) {

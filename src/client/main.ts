@@ -13,7 +13,7 @@ import {
 import type { ClientMsg, LogEntry, ServerMsg } from "../net/protocol";
 import type { PlayerInfo } from "../net/tiers";
 import { draw, observe, resetFx, resize, setPerspective, toWorld, type Mark } from "./render";
-import { cardArt } from "./sprites";
+import { setPortrait } from "./portraits";
 import { isMuted, setMuted, sfx, unlockAudio } from "./audio";
 import { getToken, getUser, initAccount, onAccountChange, openAuth, refreshMe, setUser, tierColor } from "./account";
 import { getDeck, initDeck } from "./deck";
@@ -91,13 +91,7 @@ for (let i = 0; i < 4; i++) {
 function setArt(el: HTMLElement, slot: number, card: string) {
   if (shownArt[slot] === card) return;
   shownArt[slot] = card;
-  el.querySelector("canvas")?.remove();
-  const src = cardArt(card);
-  const cv = document.createElement("canvas");
-  cv.width = src.width;
-  cv.height = src.height;
-  cv.getContext("2d")!.drawImage(src, 0, 0);
-  el.prepend(cv);
+  setPortrait(el, card);
 }
 
 function renderHand() {
@@ -106,7 +100,7 @@ function renderHand() {
   p.hand.forEach((id, i) => {
     const def = CARDS[id];
     const b = cardButtons[i];
-    b.className = `card ${def.kind}${elixir < def.cost ? " poor" : ""}${selected === id ? " sel" : ""}`;
+    b.className = `card${elixir < def.cost ? " poor" : ""}${selected === id ? " sel" : ""}`;
     b.setAttribute("aria-label", `${def.name}, ${def.cost} aether. ${def.description}`);
     b.title = def.description;
     setArt(b, i, id);

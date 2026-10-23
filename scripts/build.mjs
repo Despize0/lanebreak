@@ -16,6 +16,7 @@ async function bundleClient(online) {
     target: "es2020",
     write: false,
     define: { __ONLINE__: String(online) },
+    loader: { ".webp": "dataurl" },
   });
   const js = out.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");
   return template.replace("/*BUNDLE*/", () => js);
