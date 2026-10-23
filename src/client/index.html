@@ -166,6 +166,13 @@ input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
 .verify b { color: var(--good); font-weight: 800; }
 
 .deck-panel { width: min(360px, 100%); gap: 10px; }
+.skins { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.skin { appearance: none; border: 2px solid var(--line); border-radius: 9px; background: var(--night-2); color: var(--muted); padding: 4px 2px 3px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; font-family: var(--font-ui); font-size: 9.5px; font-weight: 800; line-height: 1.1; min-width: 0; }
+.skin img { width: 38px; height: 44px; object-fit: contain; }
+.skin .classic { width: 38px; height: 44px; background: linear-gradient(180deg, transparent 0 8%, #3e8af0 8% 38%, #c9bfae 38% 92%, transparent 92%); clip-path: polygon(50% 0, 78% 38%, 74% 38%, 74% 92%, 26% 92%, 26% 38%, 22% 38%); }
+.skin span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skin.on { border-color: var(--gold); color: var(--text); box-shadow: 0 0 0 1px var(--gold); }
+.skin:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .deck-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .deck-meta { font-size: 13px; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
 .deck-meta b { color: var(--text); }
@@ -263,6 +270,8 @@ input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
           <p id="deckInfoDesc"></p>
           <p class="deck-stats" id="deckInfoStats"></p>
         </div>
+        <div class="label">Tower style</div>
+        <div class="skins" id="skinRow"></div>
         <div class="label">Tap cards to swap them in and out</div>
         <div class="deck-grid" id="deckPool"></div>
         <div class="btns">

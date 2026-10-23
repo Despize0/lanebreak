@@ -2,11 +2,14 @@
 
 import { CARD_LIST, CARDS, DEFAULT_DECK, DECK_SIZE, isValidDeck, type CardDef } from "../sim/cards";
 import { PORTRAITS, cardType } from "./portraits";
+import { TOWER_ART, TOWER_NAMES, TOWER_SKINS, type TowerSkin } from "./towerSkins";
+import { isTowerSkin } from "../net/tiers";
 import { getToken, getUser, onAccountChange } from "./account";
 import { sfx } from "./audio";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const KEY = "lb:deck";
+const SKIN_KEY = "lb:skin";
 
 let deck: string[] = load();
 let draft: string[] = [];
@@ -23,6 +26,25 @@ function load(): string[] {
 }
 
 export const getDeck = () => [...deck];
+
+let skin: TowerSkin = loadSkin();
+let draftSkin: TowerSkin = skin;
+function loadSkin(): TowerSkin {
+  try {
+    const v = localStorage.getItem(SKIN_KEY);
+    if (isTowerSkin(v)) return v;
+  } catch {}
+  return "classic";
+}
+export const getSkin = () => skin;
+
+function renderSkins() {
+  $("skinRow").innerHTML = TOWER_SKINS.map((k) => {
+    const art = TOWER_ART[k];
+    return `<button type="button" class="skin${draftSkin === k ? " on" : ""}" data-skin="${k}" aria-pressed="${draftSkin === k}" title="${TOWER_NAMES[k]}">
+      ${art ? `<img src="${art}" alt="">` : `<span class="classic" aria-hidden="true"></span>`}<span>${TOWER_NAMES[k]}</span></button>`;
+  }).join("");
+}
 
 async function persist(d: string[]) {
   deck = [...d];
@@ -94,6 +116,8 @@ function render() {
 }
 
 export function openDeck() {
+  draftSkin = skin;
+  renderSkins();
   draft = [...deck];
   focus = draft[0] ?? CARD_LIST[0];
   render();
@@ -124,8 +148,19 @@ export function initDeck(showScreen: (id: string | null) => void, showToast: (m:
     draft = [...DEFAULT_DECK];
     render();
   });
+  $("skinRow").addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-skin]");
+    if (!b || !isTowerSkin(b.dataset.skin)) return;
+    draftSkin = b.dataset.skin;
+    sfx.select();
+    renderSkins();
+  });
   $("deckSave").addEventListener("click", async () => {
     if (!isValidDeck(draft)) return;
+    skin = draftSkin;
+    try {
+      localStorage.setItem(SKIN_KEY, skin);
+    } catch {}
     await persist(draft);
     toast(getUser() ? "Deck saved to your account" : "Deck saved");
     show("startScreen");

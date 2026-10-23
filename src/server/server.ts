@@ -14,7 +14,7 @@ import {
 } from "../sim/sim";
 import { CARDS, DEFAULT_DECK, isValidDeck } from "../sim/cards";
 import { MAX_MSG_BYTES, type ClientMsg, type LogEntry, type ServerMsg, type WireInput } from "../net/protocol";
-import { PLACEMENT_GAMES, tierFor, type PlayerInfo, type PublicUser } from "../net/tiers";
+import { PLACEMENT_GAMES, isTowerSkin, tierFor, type PlayerInfo, type PublicUser, type TowerSkin } from "../net/tiers";
 import { makeStore, type MatchRow, type RatingUpdate, type User } from "./store";
 import { decay, rate, type Rating } from "./glicko";
 import {
@@ -49,6 +49,7 @@ interface Conn {
   user: User | null;
   guestName: string;
   deck: string[];
+  skin: TowerSkin;
   chain: Promise<void>; // messages from one socket are handled strictly in order
 }
 
@@ -124,9 +125,9 @@ function toPublic(u: User, rank: number | null = null, self = false): PublicUser
 }
 
 function infoFor(conn: Conn): PlayerInfo {
-  if (!conn.user) return { name: conn.guestName, rating: null, tier: null, placed: false };
+  if (!conn.user) return { name: conn.guestName, rating: null, tier: null, placed: false, skin: conn.skin };
   const p = toPublic(conn.user);
-  return { name: p.name, rating: p.rating, tier: p.tier, placed: p.placed };
+  return { name: p.name, rating: p.rating, tier: p.tier, placed: p.placed, skin: conn.skin };
 }
 
 async function sendMe(conn: Conn) {
@@ -365,14 +366,20 @@ function parse(raw: string): ClientMsg | null {
     case "leave":
       return { t: "leave" };
     case "create":
-      return { t: "create", deck: isValidDeck(m.deck) ? m.deck : undefined };
+      return { t: "create", deck: isValidDeck(m.deck) ? m.deck : undefined, skin: isTowerSkin(m.skin) ? m.skin : undefined };
     case "queue":
-      return { t: "queue", ranked: m.ranked === true, deck: isValidDeck(m.deck) ? m.deck : undefined };
+      return {
+        t: "queue", ranked: m.ranked === true, deck: isValidDeck(m.deck) ? m.deck : undefined,
+        skin: isTowerSkin(m.skin) ? m.skin : undefined,
+      };
     case "auth":
       return typeof m.token === "string" && m.token.length > 10 && m.token.length < 100 ? { t: "auth", token: m.token } : null;
     case "join":
       return typeof m.code === "string" && CODE_RE.test(m.code.toUpperCase())
-        ? { t: "join", code: m.code.toUpperCase(), deck: isValidDeck(m.deck) ? m.deck : undefined } : null;
+        ? {
+          t: "join", code: m.code.toUpperCase(), deck: isValidDeck(m.deck) ? m.deck : undefined,
+          skin: isTowerSkin(m.skin) ? m.skin : undefined,
+        } : null;
     case "rejoin":
       return typeof m.code === "string" && typeof m.token === "string" && m.token.length === 32
         ? { t: "rejoin", code: m.code.toUpperCase(), token: m.token } : null;
@@ -417,6 +424,7 @@ async function handle(conn: Conn, msg: ClientMsg): Promise<void> {
 
     case "queue": {
       conn.deck = pickDeck(conn, msg.deck);
+      if (isTowerSkin(msg.skin) && !conn.room && !conn.queued) conn.skin = msg.skin;
       const b = busy(conn);
       if (b) return send(conn, { t: "err", msg: b });
       if (conn.queued) return;
@@ -452,6 +460,7 @@ async function handle(conn: Conn, msg: ClientMsg): Promise<void> {
 
     case "create": {
       conn.deck = pickDeck(conn, msg.deck);
+      if (isTowerSkin(msg.skin) && !conn.room && !conn.queued) conn.skin = msg.skin;
       const b = busy(conn);
       if (b) return send(conn, { t: "err", msg: b });
       leaveQueues(conn);
@@ -461,6 +470,7 @@ async function handle(conn: Conn, msg: ClientMsg): Promise<void> {
 
     case "join": {
       conn.deck = pickDeck(conn, msg.deck);
+      if (isTowerSkin(msg.skin) && !conn.room && !conn.queued) conn.skin = msg.skin;
       const b = busy(conn);
       if (b) return send(conn, { t: "err", msg: b });
       const r = rooms.get(msg.code);
@@ -730,7 +740,7 @@ const wss = new WebSocketServer({ server: http, path: "/ws", maxPayload: MAX_MSG
 wss.on("connection", (ws) => {
   const conn: Conn = {
     id: nextConnId++, ws, room: null, player: null, tokens: RATE_CAPACITY, lastRefill: Date.now(),
-    queued: null, queuedAt: 0, user: null, guestName: `Guest${randomInt(1000, 10000)}`, deck: [...DEFAULT_DECK],
+    queued: null, queuedAt: 0, user: null, guestName: `Guest${randomInt(1000, 10000)}`, deck: [...DEFAULT_DECK], skin: "classic",
     chain: Promise.resolve(),
   };
   const live = ws as WebSocket & { _lbAlive?: boolean };

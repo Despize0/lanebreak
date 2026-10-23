@@ -16,7 +16,8 @@ import { draw, observe, resetFx, resize, setPerspective, toWorld, type Mark } fr
 import { setPortrait } from "./portraits";
 import { isMuted, setMuted, sfx, unlockAudio } from "./audio";
 import { getToken, getUser, initAccount, onAccountChange, openAuth, refreshMe, setUser, tierColor } from "./account";
-import { getDeck, initDeck } from "./deck";
+import { getDeck, getSkin, initDeck } from "./deck";
+import { TOWER_SKINS } from "./towerSkins";
 
 declare const __ONLINE__: boolean;
 
@@ -51,6 +52,7 @@ let decks: [string[], string[]] = [DEFAULT_DECK, DEFAULT_DECK];
 let diff: Diff = "normal";
 let running = false;
 let ranked = false;
+let skins: [string, string] = ["classic", "classic"];
 let players: [PlayerInfo, PlayerInfo] | null = null;
 let acc = 0;
 let lastT = 0;
@@ -309,6 +311,7 @@ function startBot(d: Diff) {
   setPerspective(0);
   seed = (Math.random() * 0xffffffff) >>> 0; // fine for local play; the server picks seeds online
   decks = [getDeck(), botDeck(seed)];
+  skins = [getSkin(), TOWER_SKINS[seed % TOWER_SKINS.length]];
   game = createGame(seed, decks);
   bot = new Bot(1, { seed: seed ^ 0x5eed, ...DIFF[d] });
   resetView();
@@ -468,6 +471,7 @@ function onServer(m: ServerMsg) {
       me = m.you;
       ranked = m.ranked;
       players = m.players;
+      skins = [m.players[0].skin ?? "classic", m.players[1].skin ?? "classic"];
       setPerspective(me);
       session = { code: m.code, token: m.token };
       try { sessionStorage.setItem(`lb:${m.code}`, m.token); } catch {}
@@ -594,13 +598,13 @@ function queueMatch(isRanked: boolean) {
     return openAuth("login", () => queueMatch(true), "Sign in to play ranked.");
   }
   showWait(isRanked ? "ranked" : "casual");
-  net.open(() => net.send({ t: "queue", ranked: isRanked, deck: getDeck() }));
+  net.open(() => net.send({ t: "queue", ranked: isRanked, deck: getDeck(), skin: getSkin() }));
 }
 function playFriend() {
   unlockAudio();
   showWait("friend");
   $("invite").hidden = true;
-  net.open(() => net.send({ t: "create", deck: getDeck() }));
+  net.open(() => net.send({ t: "create", deck: getDeck(), skin: getSkin() }));
 }
 function joinCode(code: string) {
   code = code.trim().toUpperCase();
@@ -609,7 +613,7 @@ function joinCode(code: string) {
   try { token = sessionStorage.getItem(`lb:${code}`); } catch {}
   showWait("join", code);
   // a stored token means this tab was already in that match (page refresh): rejoin it
-  net.open(() => net.send(token ? { t: "rejoin", code, token } : { t: "join", code, deck: getDeck() }));
+  net.open(() => net.send(token ? { t: "rejoin", code, token } : { t: "join", code, deck: getDeck(), skin: getSkin() }));
 }
 
 // ------------------------------------------------------------------ main loop
@@ -636,7 +640,7 @@ function frame(t: number) {
   }
   sentMarks = sentMarks.filter((m) => t - m.t < 1500);
   draw(game, {
-    me, alpha: running ? Math.min(1, acc / TICK_MS) : 1, prevPos, selected, ghost, marks: sentMarks,
+    me, alpha: running ? Math.min(1, acc / TICK_MS) : 1, prevPos, selected, ghost, marks: sentMarks, skins,
     canAfford: !!selected && game.players[me].elixir >= CARDS[selected].cost * ELIXIR_UNIT,
   }, t);
   requestAnimationFrame(frame);
@@ -719,6 +723,7 @@ if (!__ONLINE__) {
   const demoRng = new Rng(5);
   const demoDecks = (): [string[], string[]] => [demoRng.shuffle([...CARD_LIST]).slice(0, 8), demoRng.shuffle([...CARD_LIST]).slice(0, 8)];
   game = createGame(77, demoDecks());
+  skins = ["warden", "ironhide"];
   resetFx(game);
   let demoAcc = 0;
   let demoLast = performance.now();
@@ -731,6 +736,7 @@ if (!__ONLINE__) {
       demoAcc -= TICK_MS;
       if (game.phase === "over") {
         game = createGame((Math.random() * 1e9) >>> 0, demoDecks());
+        skins = [TOWER_SKINS[(Math.random() * 5) | 0], TOWER_SKINS[(Math.random() * 5) | 0]];
         resetFx(game);
       }
       const ins = demoBots.map((b) => b.decide(game)).filter((x): x is Input => !!x);

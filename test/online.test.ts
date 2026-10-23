@@ -356,7 +356,7 @@ test("casual matches never change ratings", async () => {
   B.c.ws.close();
 });
 
-test("custom decks: used in the match, saved to the account, junk rejected", async () => {
+test("custom decks and tower skins: used in the match, saved, junk rejected", async () => {
   const deckA = ["colossus", "zap", "wisps", "warden", "twinrangers", "skyrider", "bombardier", "cannon"];
   const A = await authedClient();
   const B = await authedClient();
@@ -365,10 +365,13 @@ test("custom decks: used in the match, saved to the account, junk rejected", asy
   const bad = await fetch(`${HTTP}/api/deck`, { method: "PUT", headers: { "content-type": "application/json", authorization: `Bearer ${A.token}` }, body: JSON.stringify({ deck: ["zap", "zap"] }) });
   assert.equal(bad.status, 400);
   assert.deepEqual((await get("/api/me", A.token)).body.user.deck, deckA);
-  A.c.send({ t: "queue", ranked: false, deck: deckA });
-  B.c.send({ t: "queue", ranked: false, deck: ["megaknight", "zap"] });
+  A.c.send({ t: "queue", ranked: false, deck: deckA, skin: "colossus" });
+  B.c.send({ t: "queue", ranked: false, deck: ["megaknight", "zap"], skin: "lava" } as any);
   await A.c.waitFor(() => !!A.c.end && !!B.c.end, 90000);
   assert.deepEqual(A.c.start!.decks[A.c.me], deckA);
+  assert.equal(A.c.start!.players[A.c.me].skin, "colossus", "tower skin reaches both players");
+  assert.equal(B.c.start!.players[A.c.me].skin, "colossus");
+  assert.equal(A.c.start!.players[B.c.me].skin, "classic", "unknown skins fall back to the castle");
   assert.deepEqual(A.c.start!.decks[B.c.me].slice().sort(), ["brute", "bulwark", "ember", "ironhide", "ranger", "skywing", "sparkcaster", "swarmlings"]);
   // every card A played came from A's deck
   const rec = (await get(`/api/matches/${A.c.code}`)).body;

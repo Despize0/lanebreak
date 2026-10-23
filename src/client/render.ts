@@ -8,7 +8,9 @@ import {
   type Entity, type GameState, type PlayerId,
 } from "../sim/sim";
 import { sfx } from "./audio";
-import { spriteFor } from "./spriteCache";
+import { animFrame, spriteFor } from "./spriteCache";
+import { ANIM_BASE_HEIGHT, animKey } from "./unitAnim";
+import { towerImage } from "./towerSkins";
 import { SPRITE_HEIGHT, type View } from "./unitSprites";
 import { BLUE, RED, cardArt, drawFireball, drawKeep, drawLighthouse, drawRubble, drawUnit, type Team } from "./sprites";
 
@@ -21,6 +23,7 @@ export interface UiState {
   ghost: { x: number; y: number } | null;
   canAfford: boolean;
   marks: Mark[];
+  skins?: [string, string]; // side-tower skin per player seat
 }
 
 const canvas = document.getElementById("arena") as HTMLCanvasElement;
@@ -634,8 +637,25 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   let py = SY(y);
   if (e.kind === "tower") {
     const r = L(e.radius);
+    const skinImg = e.card === "king" ? null : towerImage(ui.skins?.[e.owner] ?? "classic");
     if (e.card === "king") drawKeep(ctx, px, py, r, team, e.active, t);
-    else drawLighthouse(ctx, px, py, r, team, e.active, t);
+    else if (skinImg) {
+      // painted tower skin on a team-colored plinth
+      ctx.save();
+      ctx.fillStyle = team.dark;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.ellipse(px, py + r * 0.42, r * 1.02, r * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = team.main;
+      ctx.lineWidth = Math.max(2, 3 * dpr);
+      ctx.stroke();
+      const hh = r * 2.55;
+      const ww = (skinImg.naturalWidth / skinImg.naturalHeight) * hh;
+      ctx.drawImage(skinImg, px - ww / 2, py + r * 0.55 - hh, ww, hh);
+      ctx.restore();
+    } else drawLighthouse(ctx, px, py, r, team, e.active, t);
     // keep the bar on screen for the rival's king at the very top edge
     const top = Math.max(py - r * (e.card === "king" ? 2.05 : 2.45), 16 * dpr);
     towerBar(px, top, r * 1.25, e.hp, e.maxHp, team);
@@ -679,9 +699,41 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   viewDir.set(e.id, dir);
   const groundY = py;
   py -= lift;
-  const frame = spriteFor(e.card, dir, face as 1 | -1, team);
-  if (!frame) {
-    // no painted sprite for this unit: fall back to the code-drawn character
+  const h = r * (SPRITE_HEIGHT[e.card] ?? 2.6);
+  // pick the picture: attack frames while striking, the walk cycle while moving (or flying),
+  // the painted back view when heading away from the viewer, walk frame 0 when standing
+  const key = animKey(e.card, e.id);
+  const attacking = !!la && atk < 0.75;
+  let cv: HTMLCanvasElement | null = null;
+  let pad = 0;
+  let anchor = 0; // feet x inside cv
+  let k = 1;
+  let mirror = false;
+  let animated = false;
+  if (!(dir === "back" && !attacking)) {
+    const n = attacking ? Math.min(2, Math.floor((atk / 0.75) * 3)) : moving || e.flying ? Math.floor(t * 8 + e.id * 0.37) : 0;
+    const af = animFrame(key, attacking ? "attack" : "walk", n, team) ?? (attacking ? animFrame(key, "walk", 0, team) : null);
+    if (af) {
+      cv = af.canvas;
+      pad = af.pad;
+      anchor = af.pad + af.ax;
+      k = h / ANIM_BASE_HEIGHT;
+      mirror = face < 0;
+      animated = true;
+    }
+  }
+  if (!cv) {
+    const frame = spriteFor(e.card, dir, face as 1 | -1, team);
+    if (frame) {
+      cv = frame.canvas;
+      pad = frame.pad;
+      anchor = frame.canvas.width / 2;
+      k = h / (frame.canvas.height - frame.pad * 2);
+      mirror = frame.flip;
+    }
+  }
+  if (!cv) {
+    // no painted art for this unit: fall back to the code-drawn character
     ctx.globalAlpha = e.deployTicks > 0 ? 0.9 : 1;
     drawUnit(ctx, e.card, px + lx, py + ly, r, {
       t, id: e.id, moving, face: face as 1 | -1, atk, hp: e.hp / e.maxHp, team,
@@ -701,28 +753,26 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   ctx.ellipse(px, groundY, r * 0.8, r * 0.32, 0, 0, Math.PI * 2);
   ctx.stroke();
   ctx.globalAlpha = 1;
-  const cv = frame.canvas;
-  const h = r * (SPRITE_HEIGHT[e.card] ?? 2.6);
-  const k = h / (cv.height - frame.pad * 2);
   const w = cv.width * k;
   const fullH = cv.height * k;
   const walk = moving && !e.flying ? p_walk(t, e.id) : 0;
-  const bob = -Math.abs(walk) * r * 0.12;
-  const tilt = moving ? walk * 0.06 : e.flying ? Math.sin(t * 2.5 + e.id) * 0.05 : 0;
-  const squash = atk < 0.25 ? Math.sin((atk / 0.25) * Math.PI) : 0;
+  const bob = -Math.abs(walk) * r * (animated ? 0.04 : 0.12);
+  const tilt = animated ? 0 : moving ? walk * 0.06 : e.flying ? Math.sin(t * 2.5 + e.id) * 0.05 : 0;
+  const squash = !animated && atk < 0.25 ? Math.sin((atk / 0.25) * Math.PI) : 0;
   const sxk = 1 + squash * 0.08;
   const syk = 1 - squash * 0.07;
   ctx.save();
-  ctx.translate(px + lx, py + ly + bob + frame.pad * k);
+  ctx.translate(px + lx, py + ly + bob + pad * k);
   ctx.rotate(tilt);
-  ctx.scale(frame.flip ? -sxk : sxk, syk);
+  ctx.scale(mirror ? -sxk : sxk, syk);
   ctx.globalAlpha = e.deployTicks > 0 ? 0.92 : 1;
-  ctx.drawImage(cv, -w / 2, -fullH, w, fullH);
+  const left = -anchor * k;
+  ctx.drawImage(cv, left, -fullH, w, fullH);
   const hit = hitAt.get(e.id);
   if (hit !== undefined && now - hit < 90) {
     ctx.globalCompositeOperation = "lighter";
     ctx.globalAlpha = 0.45 * (1 - (now - hit) / 90);
-    ctx.drawImage(cv, -w / 2, -fullH, w, fullH);
+    ctx.drawImage(cv, left, -fullH, w, fullH);
   }
   ctx.restore();
   if (e.deployTicks === 0 && e.hp < e.maxHp) {

@@ -1,6 +1,7 @@
 // Loads the painted unit sprites and prepares team-outlined copies for fast drawing.
 
 import { UNIT_SPRITES, SIDE_FACES, type View } from "./unitSprites";
+import { UNIT_ANIM } from "./unitAnim";
 import type { Team } from "./paint";
 
 const images = new Map<string, HTMLImageElement>();
@@ -14,6 +15,18 @@ for (const [unit, views] of Object.entries(UNIT_SPRITES)) {
     img.decoding = "async";
     img.src = url;
     images.set(`${unit}:${view}`, img);
+  }
+}
+
+const animImages = new Map<string, HTMLImageElement>();
+for (const [key, anim] of Object.entries(UNIT_ANIM)) {
+  for (const kind of ["walk", "attack"] as const) {
+    anim[kind].forEach((f, i) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = f.url;
+      animImages.set(`${key}:${kind}:${i}`, img);
+    });
   }
 }
 
@@ -76,3 +89,20 @@ export function spriteFor(card: string, dir: View, face: 1 | -1, team: Team): Sp
 }
 
 export const hasSprites = (card: string) => !!UNIT_SPRITES[card];
+
+export interface AnimFrame {
+  canvas: HTMLCanvasElement;
+  pad: number;
+  ax: number; // feet x inside the original frame
+}
+
+/** One walk/attack frame with the team outline baked in (frames face right). */
+export function animFrame(key: string, kind: "walk" | "attack", i: number, team: Team): AnimFrame | null {
+  const anim = UNIT_ANIM[key];
+  if (!anim || !anim[kind].length) return null;
+  const idx = ((i % anim[kind].length) + anim[kind].length) % anim[kind].length;
+  const id = `${key}:${kind}:${idx}`;
+  const img = animImages.get(id);
+  if (!ready(img)) return null;
+  return { canvas: outline(id, img, team), pad: PAD, ax: anim[kind][idx].ax };
+}

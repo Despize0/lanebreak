@@ -1,4 +1,4 @@
-# Lanebreak (prototype v0.6)
+# Lanebreak (prototype v0.7)
 
 Real-time lane card battler on floating sky islands. Online 1v1 (ranked, casual, friends),
 accounts with Glicko-2 ratings, a leaderboard, and practice against a bot. A deterministic
@@ -45,7 +45,8 @@ src/client/       main.ts (flow + networking), render.ts (arena, effects), unitS
                   spriteCache.ts (painted unit sprites, team outlines), characters.ts/sprites.ts
                   (code-drawn fallback characters, towers), portraits.ts (card art), deck.ts,
                   audio.ts (synth sounds), account.ts (sign-in, leaderboard)
-assets/cards/     painted card portraits; assets/units/ painted unit sprites (front/side/back)
+assets/cards/     painted card portraits; assets/units/ painted views (front/side/back);
+                  assets/anim/ walk + attack frames; assets/towers/ tower skins
 test/             sim, rating, and end-to-end online tests
 ```
 

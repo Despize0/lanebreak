@@ -43,4 +43,9 @@ export interface PlayerInfo {
   rating: number | null; // null for guests
   tier: string | null;
   placed: boolean;
+  skin?: TowerSkin; // side-tower look this player picked
 }
+
+export const TOWER_SKINS = ["classic", "ironhide", "colossus", "warden", "ranger"] as const;
+export type TowerSkin = (typeof TOWER_SKINS)[number];
+export const isTowerSkin = (v: unknown): v is TowerSkin => typeof v === "string" && (TOWER_SKINS as readonly string[]).includes(v);

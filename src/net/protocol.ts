@@ -17,9 +17,9 @@ export type LogEntry = [number, PlayerId, string, number, number];
 
 export type ClientMsg =
   | { t: "auth"; token: string }
-  | { t: "queue"; ranked: boolean; deck?: string[] }
-  | { t: "create"; deck?: string[] }
-  | { t: "join"; code: string; deck?: string[] }
+  | { t: "queue"; ranked: boolean; deck?: string[]; skin?: string }
+  | { t: "create"; deck?: string[]; skin?: string }
+  | { t: "join"; code: string; deck?: string[]; skin?: string }
   | { t: "rejoin"; code: string; token: string }
   | { t: "play"; card: string; x: number; y: number }
   | { t: "hash"; tick: number; h: number }
