@@ -175,6 +175,24 @@ function buildScenery() {
     c.fillRect(SX(x) - rr, Y(y) - rr, rr * 2, rr * 2);
   }
 
+  // fine grass texture: thousands of short blades in slightly different greens
+  const blades = new Rng(83);
+  c.lineCap = "round";
+  for (let i = 0; i < 9000; i++) {
+    const x = blades.int(ARENA_W);
+    const y = blades.int(ARENA_H);
+    if (y > RIVER_TOP - 250 && y < RIVER_BOTTOM + 250) continue;
+    const tone = blades.int(4);
+    c.strokeStyle = ["rgba(40,95,30,.22)", "rgba(150,215,95,.2)", "rgba(70,130,45,.2)", "rgba(200,235,140,.14)"][tone];
+    c.lineWidth = Math.max(0.6, L(28));
+    const len = 90 + blades.int(120);
+    const lean = blades.int(60) - 30;
+    c.beginPath();
+    c.moveTo(SX(x), Y(y));
+    c.lineTo(SX(x + lean), Y(y - len));
+    c.stroke();
+  }
+
   // subtle tile checker for placement readability
   c.fillStyle = "rgba(40,90,30,.06)";
   for (let ty = 0; ty < 32; ty++) {
@@ -624,10 +642,17 @@ function drawShadow(e: Entity, x: number, y: number) {
   if (e.kind === "tower") return;
   const r = L(e.radius) * VIS;
   const lift = e.deployTicks > 0 && e.kind !== "spell" ? (e.deployTicks / DEPLOY_TICKS) : 0;
-  const k = 1 - lift * 0.6;
-  ctx.fillStyle = `rgba(20,40,20,${0.28 * k})`;
+  const air = e.flying ? 0.55 : 1;
+  const k = (1 - lift * 0.6) * air;
+  const cx = SX(x) + r * 0.12; // light comes from the upper left
+  const cy = SY(y) + r * 0.05;
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0, `rgba(10,25,10,${0.45 * k})`);
+  g.addColorStop(0.55, `rgba(10,25,10,${0.22 * k})`);
+  g.addColorStop(1, "rgba(10,25,10,0)");
+  ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.ellipse(SX(x), SY(y), r * 0.9 * k, r * 0.4 * k, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, r * (e.flying ? 0.8 : 1.0), r * 0.42, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -637,6 +662,18 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   let py = SY(y);
   if (e.kind === "tower") {
     const r = L(e.radius);
+    // soft ground shadow so the tower sits in the scene (light from the upper left)
+    {
+      const sx0 = px + r * 0.35;
+      const sy0 = py + r * 0.5;
+      const g = ctx.createRadialGradient(sx0, sy0, 0, sx0, sy0, r * 1.5);
+      g.addColorStop(0, "rgba(10,25,10,.4)");
+      g.addColorStop(1, "rgba(10,25,10,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(sx0, sy0, r * 1.5, r * 0.65, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     const skinImg = e.card === "king" ? null : towerImage(ui.skins?.[e.owner] ?? "classic");
     if (e.card === "king") drawKeep(ctx, px, py, r, team, e.active, t);
     else if (skinImg) {
@@ -704,15 +741,23 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   // the painted back view when heading away from the viewer, walk frame 0 when standing
   const key = animKey(e.card, e.id);
   const attacking = !!la && atk < 0.75;
+  const useAnim = !STATIC_ART.has(e.card);
   let cv: HTMLCanvasElement | null = null;
   let pad = 0;
   let anchor = 0; // feet x inside cv
   let k = 1;
   let mirror = false;
   let animated = false;
-  if (!(dir === "back" && !attacking)) {
-    const n = attacking ? Math.min(2, Math.floor((atk / 0.75) * 3)) : moving || e.flying ? Math.floor(t * 8 + e.id * 0.37) : 0;
-    const af = animFrame(key, attacking ? "attack" : "walk", n, team) ?? (attacking ? animFrame(key, "walk", 0, team) : null);
+  let blendCv: HTMLCanvasElement | null = null; // next frame, faded in for smoother motion
+  let blendAnchor = 0;
+  let blend = 0;
+  if (useAnim) {
+    // walk cycle speed follows the unit's real speed; attack frames span the strike
+    const rate = 7 * Math.max(0.6, (e.speed || 50) / 50);
+    const ph = attacking ? (atk / 0.75) * 2.999 : moving || e.flying ? t * rate + e.id * 0.37 : 0;
+    const n = Math.floor(ph);
+    const kind = attacking ? "attack" : "walk";
+    const af = animFrame(key, kind, n, team) ?? (attacking ? animFrame(key, "walk", 0, team) : null);
     if (af) {
       cv = af.canvas;
       pad = af.pad;
@@ -720,6 +765,12 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
       k = h / ANIM_BASE_HEIGHT;
       mirror = face < 0;
       animated = true;
+      const nf = (moving || e.flying || attacking) ? animFrame(key, kind, attacking ? Math.min(2, n + 1) : n + 1, team) : null;
+      if (nf && nf.canvas !== af.canvas) {
+        blendCv = nf.canvas;
+        blendAnchor = nf.pad + nf.ax;
+        blend = ph - n;
+      }
     }
   }
   if (!cv) {
@@ -745,14 +796,17 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
     }
     return;
   }
-  // team ring on the ground
-  ctx.strokeStyle = team.main;
-  ctx.globalAlpha = 0.75;
-  ctx.lineWidth = Math.max(1.5, 2 * dpr);
-  ctx.beginPath();
-  ctx.ellipse(px, groundY, r * 0.8, r * 0.32, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.globalAlpha = 1;
+  // soft team-colored glow on the ground under the unit
+  {
+    const gr = ctx.createRadialGradient(px, groundY, 0, px, groundY, r * 0.95);
+    gr.addColorStop(0, team === BLUE ? "rgba(70,150,255,.55)" : "rgba(255,80,70,.55)");
+    gr.addColorStop(0.6, team === BLUE ? "rgba(70,150,255,.22)" : "rgba(255,80,70,.22)");
+    gr.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.ellipse(px, groundY, r * 0.95, r * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
   const w = cv.width * k;
   const fullH = cv.height * k;
   const walk = moving && !e.flying ? p_walk(t, e.id) : 0;
@@ -767,7 +821,15 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   ctx.scale(mirror ? -sxk : sxk, syk);
   ctx.globalAlpha = e.deployTicks > 0 ? 0.92 : 1;
   const left = -anchor * k;
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(cv, left, -fullH, w, fullH);
+  if (blendCv && blend > 0.05) {
+    // cross-fade into the next frame: reads as more in-between frames
+    const base = ctx.globalAlpha;
+    ctx.globalAlpha = base * blend;
+    ctx.drawImage(blendCv, -blendAnchor * k, -blendCv.height * k, blendCv.width * k, blendCv.height * k);
+    ctx.globalAlpha = base;
+  }
   const hit = hitAt.get(e.id);
   if (hit !== undefined && now - hit < 90) {
     ctx.globalCompositeOperation = "lighter";
@@ -779,6 +841,9 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
     unitBar(px, py + ly + bob - h - 6 * dpr, Math.max(r * 1.5, 20 * dpr), e.hp / e.maxHp, team);
   }
 }
+
+/** Units drawn from their single painted views instead of the animation sheet. */
+const STATIC_ART = new Set(["bombardier"]);
 
 const p_walk = (t: number, id: number) => Math.sin(t * 10 + id * 1.7);
 

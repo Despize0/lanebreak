@@ -6,7 +6,7 @@ import type { Team } from "./paint";
 
 const images = new Map<string, HTMLImageElement>();
 const outlined = new Map<string, HTMLCanvasElement>();
-const PAD = 4; // outline thickness in source pixels (sprites are ~120px tall)
+const PAD = 1; // transparent margin in source pixels
 
 for (const [unit, views] of Object.entries(UNIT_SPRITES)) {
   for (const [view, url] of Object.entries(views)) {
@@ -34,34 +34,15 @@ function ready(img: HTMLImageElement | undefined): img is HTMLImageElement {
   return !!img && img.complete && img.naturalWidth > 0;
 }
 
-/** Sprite with a soft team-colored outline baked in, built once per sprite and team. */
-function outline(key: string, img: HTMLImageElement, team: Team): HTMLCanvasElement {
-  const k = `${key}:${team.main}`;
-  const hit = outlined.get(k);
+/** Sprite copied onto a canvas once (no outline: team is shown by the glow under the unit). */
+function outline(key: string, img: HTMLImageElement, _team: Team): HTMLCanvasElement {
+  const hit = outlined.get(key);
   if (hit) return hit;
-  const w = img.naturalWidth + PAD * 2;
-  const h = img.naturalHeight + PAD * 2;
-  const silhouette = document.createElement("canvas");
-  silhouette.width = w;
-  silhouette.height = h;
-  const s = silhouette.getContext("2d")!;
-  s.drawImage(img, PAD, PAD);
-  s.globalCompositeOperation = "source-in";
-  s.fillStyle = team.main;
-  s.fillRect(0, 0, w, h);
   const cv = document.createElement("canvas");
-  cv.width = w;
-  cv.height = h;
-  const c = cv.getContext("2d")!;
-  for (let a = 0; a < 12; a++) {
-    const ang = (a / 12) * Math.PI * 2;
-    c.drawImage(silhouette, Math.round(Math.cos(ang) * (PAD - 1)), Math.round(Math.sin(ang) * (PAD - 1)));
-  }
-  c.globalAlpha = 0.9;
-  c.drawImage(silhouette, 0, 0); // fill the center so the outline reads as solid
-  c.globalAlpha = 1;
-  c.drawImage(img, PAD, PAD);
-  outlined.set(k, cv);
+  cv.width = img.naturalWidth + PAD * 2;
+  cv.height = img.naturalHeight + PAD * 2;
+  cv.getContext("2d")!.drawImage(img, PAD, PAD);
+  outlined.set(key, cv);
   return cv;
 }
 
