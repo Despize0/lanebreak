@@ -12,6 +12,7 @@ import { animFrame, spriteFor } from "./spriteCache";
 import { ANIM_BASE_HEIGHT, animKey } from "./unitAnim";
 import { towerImage } from "./towerSkins";
 import { SPRITE_HEIGHT, spriteKey, type View } from "./unitSprites";
+import { BOWS, HEAVY, SLAMMERS, SWORD, WINGS, rigImage } from "./rig";
 import { BLUE, RED, cardArt, drawFireball, drawKeep, drawLighthouse, drawRubble, drawUnit, type Team } from "./sprites";
 
 export interface Mark { card: string; x: number; y: number; t: number }
@@ -766,6 +767,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   let k = 1;
   let mirror = false;
   let animated = false;
+  let view: View = dir;
   let blendCv: HTMLCanvasElement | null = null; // next frame, faded in for smoother motion
   let blendAnchor = 0;
   let blend = 0;
@@ -799,6 +801,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
       anchor = frame.canvas.width / 2;
       k = h / (frame.canvas.height - frame.pad * 2);
       mirror = frame.flip;
+      view = frame.view;
     }
   }
   if (!cv) {
@@ -834,17 +837,152 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   const land = !animated && moving && !e.flying ? Math.max(0, 1 - stride * 4) : 0;
   const tilt = e.flying && !animated ? Math.sin(t * 1.6 + e.id) * 0.018 : 0;
   const breathe = !moving && !e.flying && !animated ? Math.sin(t * 2.2 + e.id) * 0.012 : 0;
-  const squash = !animated && atk < 0.25 ? Math.sin((atk / 0.25) * Math.PI) : 0;
-  const sxk = 1 + squash * 0.08 + land * 0.025;
-  const syk = 1 - squash * 0.07 - land * 0.035 + breathe;
+  // attack rhythm: wind up during the second half of each attack cycle, strike when the hit lands
+  const sk = spriteKey(e.card, e.id);
+  const period = Math.max(1, e.hitTicks) * 50;
+  const since = la ? now - la.t : 1e9;
+  const cyc = since / period;
+  const windup = la && !animated ? smoothstep(0.45, 1, cyc) * Math.min(1, Math.max(0, (1.7 - cyc) / 0.4)) : 0;
+  const slam = SLAMMERS.has(e.card);
+  const sT = since / (slam ? 240 : 170);
+  const squash = !animated && sT < 1 ? Math.sin(sT * Math.PI) : 0;
+  const lean = windup * (slam ? 0.1 : 0.04);
+  const sxk = 1 + squash * (slam ? 0.14 : 0.07) + land * 0.025;
+  const syk = 1 - squash * (slam ? 0.14 : 0.06) - land * 0.035 + breathe + windup * (slam ? 0.06 : 0.02);
+  const fdir = mirror ? -1 : 1;
+  const rot = tilt - lean * fdir;
+  const tx = px + lx;
+  const ty = py + ly + bob + pad * k;
   ctx.save();
-  ctx.translate(px + lx, py + ly + bob + pad * k);
-  ctx.rotate(tilt);
+  ctx.translate(tx, ty);
+  ctx.rotate(rot);
   ctx.scale(mirror ? -sxk : sxk, syk);
   ctx.globalAlpha = e.deployTicks > 0 ? 0.92 : 1;
   const left = -anchor * k;
+  const loc = (q: readonly [number, number]): [number, number] => [left + (q[0] + pad) * k, -fullH + (q[1] + pad) * k];
+  const layer = (im: HTMLImageElement) => ctx.drawImage(im, left + pad * k, -fullH + pad * k, im.width * k, im.height * k);
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(cv, left, -fullH, w, fullH);
+  let flashImg: CanvasImageSource = cv;
+  let mouthW: [number, number] | null = null;
+  const sword = animated ? undefined : SWORD[sk]?.[view];
+  const wings = animated ? undefined : WINGS[sk]?.[view];
+  const bow = animated ? undefined : BOWS[sk]?.[view];
+  const rBody = sword || wings ? rigImage(sk, view, "body") : null;
+  const blade = sword ? rigImage(sk, view, "blade") : null;
+  const wingL = wings ? rigImage(sk, view, "wingL") : null;
+  const wingR = wings ? rigImage(sk, view, "wingR") : null;
+  if (sword && rBody && blade) {
+    // sword: raise it back during the wind-up, whip it through on the hit, settle back
+    let a = -1.1 * windup;
+    if (cyc < 0.1) a = -1.1 + 2.9 * easeOut(cyc / 0.1);
+    else if (cyc < 0.35) a = 1.8 * (1 - easeInOut((cyc - 0.1) / 0.25));
+    layer(rBody);
+    const [gx, gy] = loc(sword.grip);
+    if (cyc < 0.25 && a > -1.0) {
+      // slash trail
+      const tip = loc(sword.tip);
+      const R = Math.hypot(tip[0] - gx, tip[1] - gy);
+      const base = Math.atan2(tip[1] - gy, tip[0] - gx);
+      ctx.save();
+      ctx.globalAlpha *= 0.55 * (1 - cyc / 0.25);
+      ctx.strokeStyle = "#f4fbff";
+      ctx.lineWidth = R * 0.32;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.arc(gx, gy, R * 0.78, base - 1.1, base + a, false);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.rotate(a);
+    ctx.translate(-gx, -gy);
+    layer(blade);
+    ctx.restore();
+    flashImg = rBody;
+  } else if (wings && rBody && wingL && wingR) {
+    // dragon: wings beat around the shoulders (faster while breathing fire)
+    const beat = Math.sin(t * (windup > 0 || cyc < 0.4 ? 13 : 8) + e.id);
+    const [lx0, ly0] = loc(wings.wingL);
+    const [rx0, ry0] = loc(wings.wingR);
+    ctx.save();
+    ctx.translate(rx0, ry0);
+    ctx.rotate(-beat * 0.12);
+    ctx.scale(1, 0.72 + 0.28 * beat);
+    ctx.translate(-rx0, -ry0);
+    layer(wingR);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(lx0, ly0);
+    ctx.rotate(beat * 0.3);
+    ctx.scale(1, 0.85 + 0.15 * beat);
+    ctx.translate(-lx0, -ly0);
+    layer(wingL);
+    ctx.restore();
+    layer(rBody);
+    flashImg = rBody;
+    const [mx, my] = loc(wings.mouth);
+    const sx = (mirror ? -sxk : sxk) * mx;
+    const sy = syk * my;
+    mouthW = [tx + sx * Math.cos(rot) - sy * Math.sin(rot), ty + sx * Math.sin(rot) + sy * Math.cos(rot)];
+  } else {
+    ctx.drawImage(cv, left, -fullH, w, fullH);
+  }
+  if (bow && !animated) {
+    // archer: nock an arrow and pull the string back during the wind-up; the string twangs after the shot
+    const T = loc(bow.top);
+    const B = loc(bow.bot);
+    const H = loc(bow.hand);
+    const A = loc(bow.aim);
+    const bx = B[0] - T[0];
+    const by = B[1] - T[1];
+    const u = ((H[0] - T[0]) * bx + (H[1] - T[1]) * by) / (bx * bx + by * by);
+    const R0: [number, number] = [T[0] + bx * u, T[1] + by * u];
+    ctx.lineCap = "round";
+    if (windup > 0.05) {
+      const d = easeInOut(windup);
+      const N: [number, number] = [R0[0] + (H[0] - R0[0]) * d, R0[1] + (H[1] - R0[1]) * d];
+      ctx.strokeStyle = "rgba(245,236,210,.95)";
+      ctx.lineWidth = Math.max(1, 0.9 * k);
+      ctx.beginPath();
+      ctx.moveTo(T[0], T[1]);
+      ctx.lineTo(N[0], N[1]);
+      ctx.lineTo(B[0], B[1]);
+      ctx.stroke();
+      const ax = A[0] - H[0];
+      const ay = A[1] - H[1];
+      const al = Math.hypot(ax, ay) || 1;
+      const L2 = al * 1.05;
+      const ex = N[0] + (ax / al) * L2;
+      const ey = N[1] + (ay / al) * L2;
+      ctx.strokeStyle = "#7a4a22";
+      ctx.lineWidth = Math.max(1.2, 1.7 * k);
+      ctx.beginPath();
+      ctx.moveTo(N[0], N[1]);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      ctx.fillStyle = "#dfe6ee";
+      ctx.beginPath();
+      const nx = -ay / al;
+      const ny = ax / al;
+      ctx.moveTo(ex + (ax / al) * 5 * k, ey + (ay / al) * 5 * k);
+      ctx.lineTo(ex + nx * 2.4 * k, ey + ny * 2.4 * k);
+      ctx.lineTo(ex - nx * 2.4 * k, ey - ny * 2.4 * k);
+      ctx.fill();
+      ctx.fillStyle = "#e8453c";
+      ctx.fillRect(N[0] - 2 * k, N[1] - 1.5 * k, 4 * k, 3 * k);
+    } else if (since < 260) {
+      const amp = Math.sin(since * 0.12) * (1 - since / 260) * 4 * k;
+      const nx = -by / Math.hypot(bx, by);
+      const ny = bx / Math.hypot(bx, by);
+      ctx.strokeStyle = "rgba(245,236,210,.95)";
+      ctx.lineWidth = Math.max(1, 0.9 * k);
+      ctx.beginPath();
+      ctx.moveTo(T[0], T[1]);
+      ctx.quadraticCurveTo((T[0] + B[0]) / 2 + nx * amp, (T[1] + B[1]) / 2 + ny * amp, B[0], B[1]);
+      ctx.stroke();
+    }
+  }
   if (blendCv && blend > 0.05) {
     // cross-fade into the next frame: reads as more in-between frames
     const base = ctx.globalAlpha;
@@ -856,9 +994,76 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   if (hit !== undefined && now - hit < 90) {
     ctx.globalCompositeOperation = "lighter";
     ctx.globalAlpha = 0.45 * (1 - (now - hit) / 90);
-    ctx.drawImage(cv, left, -fullH, w, fullH);
+    if (flashImg === cv) ctx.drawImage(cv, left, -fullH, w, fullH);
+    else layer(flashImg as HTMLImageElement);
   }
   ctx.restore();
+  // dragon fire: the mouth glows during the wind-up, then a stream of flame on the hit
+  if (mouthW && la) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    if (windup > 0.2) {
+      const g = ctx.createRadialGradient(mouthW[0], mouthW[1], 0, mouthW[0], mouthW[1], r * 0.6 * windup);
+      g.addColorStop(0, `rgba(255,220,120,${0.8 * windup})`);
+      g.addColorStop(1, "rgba(255,90,20,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(mouthW[0], mouthW[1], r * 0.6 * windup, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (since < 480) {
+      const p = since / 480;
+      const reach = Math.min(1, since / 140);
+      const txw = SX(la.x);
+      const tyw = SY(la.y);
+      for (let i = 0; i <= 10; i++) {
+        const f = (i / 10) * reach;
+        const fx = mouthW[0] + (txw - mouthW[0]) * f + Math.sin(t * 40 + i * 2.1) * r * 0.06;
+        const fy = mouthW[1] + (tyw - mouthW[1]) * f + Math.cos(t * 37 + i * 1.7) * r * 0.06;
+        const rr = r * (0.22 + 0.5 * f) * (1 - p * 0.45);
+        const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, rr);
+        g.addColorStop(0, `rgba(255,240,170,${0.85 * (1 - p)})`);
+        g.addColorStop(0.5, `rgba(255,140,40,${0.6 * (1 - p)})`);
+        g.addColorStop(1, "rgba(200,40,10,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(fx, fy, rr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+  // heavy hitters: ground shockwave where the fists land
+  if (slam && la && since < 420 && !animated) {
+    const p = since / 420;
+    const cx = px + lx + fdir * r * 0.55;
+    ctx.save();
+    ctx.strokeStyle = `rgba(120,95,60,${0.55 * (1 - p)})`;
+    ctx.lineWidth = Math.max(1.5, r * 0.12 * (1 - p));
+    ctx.beginPath();
+    ctx.ellipse(cx, groundY, r * (0.35 + 1.1 * p), r * (0.15 + 0.45 * p), 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = `rgba(150,125,90,${0.5 * (1 - p)})`;
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2 + e.id;
+      const d = r * (0.3 + 0.9 * p);
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(ang) * d, groundY + Math.sin(ang) * d * 0.4 - Math.sin(p * Math.PI) * r * 0.35, r * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  // big golems kick up dust on every step
+  if (HEAVY.has(e.card) && land > 0.6 && !animated) {
+    ctx.save();
+    ctx.fillStyle = `rgba(150,130,100,${0.28 * land})`;
+    for (const sgn of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(px + sgn * r * 0.45, groundY, r * 0.22, r * 0.09, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
   if (e.deployTicks === 0 && e.hp < e.maxHp) {
     unitBar(px, py + ly + bob - h - 6 * dpr, Math.max(r * 1.5, 20 * dpr), e.hp / e.maxHp, team);
   }
@@ -868,6 +1073,12 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
 const FRAME_ANIM = new Set(["swarmlings"]);
 
 const p_walk = (t: number, id: number) => Math.sin(t * 10 + id * 1.7);
+const smoothstep = (a: number, b: number, x: number) => {
+  const u = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return u * u * (3 - 2 * u);
+};
+const easeOut = (x: number) => 1 - (1 - x) * (1 - x);
+const easeInOut = (x: number) => (x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2);
 
 /** where the health bar sits above each sprite, in body radii */
 const BAR_AT: Record<string, number> = {

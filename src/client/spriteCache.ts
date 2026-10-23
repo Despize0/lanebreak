@@ -50,6 +50,7 @@ export interface SpriteFrame {
   canvas: HTMLCanvasElement;
   flip: boolean; // mirror horizontally
   pad: number; // outline padding (source px) on every side
+  view: View; // which painted view this is (may differ from the one asked for)
 }
 
 /**
@@ -63,8 +64,9 @@ export function spriteFor(card: string, dir: View, face: 1 | -1, team: Team): Sp
     const key = `${card}:${v}`;
     const img = images.get(key);
     if (!ready(img)) continue;
+    // the painted views all face right (side views per SIDE_FACES); mirror to face the other way
     const srcFace = v === "side" ? SIDE_FACES[card] ?? 1 : 1;
-    return { canvas: outline(key, img, team), flip: v === "side" && srcFace !== face, pad: PAD };
+    return { canvas: outline(key, img, team), flip: srcFace !== face, pad: PAD, view: v };
   }
   return null;
 }

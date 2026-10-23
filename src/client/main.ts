@@ -301,6 +301,19 @@ function finishLocal(serverEnd?: Extract<ServerMsg, { t: "end" }>) {
 }
 
 // ------------------------------------------------------------------ practice vs bot
+/** Dev-only (?dev in the URL, practice mode only): stage exact matchups for checking animations. */
+const devHook = typeof location !== "undefined" && location.search.includes("dev")
+  ? {
+      noBot: false,
+      spawn(player: 0 | 1, card: string, x: number, y: number) {
+        game.players[player].elixir = 560;
+        game.players[player].hand[0] = card;
+        pending.push({ tick: -1, player, card, x, y });
+      },
+    }
+  : null;
+if (devHook) (window as unknown as { __lb: typeof devHook }).__lb = devHook;
+
 function startBot(d: Diff) {
   unlockAudio();
   net.close();
@@ -338,7 +351,7 @@ function botDeck(s: number): string[] {
 function botTick() {
   const inputs: Input[] = pending.map((p) => ({ ...p, tick: game.tick }));
   pending = [];
-  const b = bot!.decide(game);
+  const b = devHook?.noBot ? null : bot!.decide(game);
   if (b) inputs.push(b);
   inputLog.push(...inputs);
   snapshotPositions();
