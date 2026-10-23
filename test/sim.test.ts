@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playBotMatch } from "../src/sim/match";
 import {
-  createGame, step, replay, hashState, ELIXIR_UNIT, START_ELIXIR, REGULATION_TICKS,
+  createGame, step, replay, hashState, canDeployAt, ELIXIR_UNIT, START_ELIXIR, REGULATION_TICKS,
   type GameState, type Input,
 } from "../src/sim/sim";
 
@@ -106,4 +106,23 @@ test("playing a card cycles it to the back of the queue", () => {
   step(s, [{ tick: 0, player: 0, card: played, ...def }]);
   assert.equal(s.players[0].hand[1], next);
   assert.equal(s.players[0].queue[s.players[0].queue.length - 1], played);
+});
+
+test("decks: each player draws only from their own deck, same order pattern", () => {
+  const d0 = ["colossus", "zap", "wisps", "warden", "twinrangers", "skyrider", "bombardier", "cannon"];
+  const d1 = ["ironhide", "ranger", "swarmlings", "bulwark", "ember", "skywing", "brute", "sparkcaster"];
+  const s = createGame(99, [d0, d1]);
+  assert.deepEqual([...s.players[0].hand, ...s.players[0].queue].sort(), [...d0].sort());
+  assert.deepEqual([...s.players[1].hand, ...s.players[1].queue].sort(), [...d1].sort());
+  // same shuffle positions for both decks (fair draws)
+  const pos = (deck: string[], p: number) => [...s.players[p].hand, ...s.players[p].queue].map((c) => deck.indexOf(c));
+  assert.deepEqual(pos(d0, 0), pos(d1, 1));
+});
+
+test("troops can be placed right behind and beside a tower, but not on it", () => {
+  const s = createGame(1);
+  assert.equal(canDeployAt(s, 0, "troop", 3500, 26500), true, "right behind the left side tower");
+  assert.equal(canDeployAt(s, 0, "troop", 8500, 30500), true, "behind the king");
+  assert.equal(canDeployAt(s, 0, "troop", 3500, 25500), false, "on the tower itself");
+  assert.equal(canDeployAt(s, 0, "troop", 4500, 25500), true, "beside the tower");
 });

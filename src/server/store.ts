@@ -2,6 +2,7 @@
 
 import pg from "pg";
 import { DEFAULT_RATING, DEFAULT_RD, DEFAULT_VOL } from "./glicko";
+import { DEFAULT_DECK } from "../sim/cards";
 import type { LogEntry } from "../net/protocol";
 
 export interface User {
@@ -15,6 +16,7 @@ export interface User {
   draws: number;
   createdAt: Date;
   lastMatchAt: Date | null;
+  deck: string[] | null;
 }
 export interface UserWithHash extends User {
   passwordHash: string;
@@ -34,6 +36,7 @@ export interface MatchRow {
   hash: number;
   seed: number;
   log: LogEntry[];
+  decks: [string[], string[]];
   endedAt: Date;
   ratings: [[number, number], [number, number]] | null; // per seat: [before, after]
 }
@@ -52,6 +55,7 @@ export interface Store {
   createUser(username: string, passwordHash: string): Promise<User | null>; // null = name taken
   findUserByName(username: string): Promise<UserWithHash | null>;
   getUser(id: number): Promise<User | null>;
+  saveDeck(userId: number, deck: string[]): Promise<void>;
   createSession(tokenHash: string, userId: number, expiresAt: Date): Promise<void>;
   getSessionUser(tokenHash: string): Promise<User | null>;
   deleteSession(tokenHash: string): Promise<void>;
@@ -59,7 +63,7 @@ export interface Store {
   getMatch(code: string): Promise<MatchRow | null>;
   leaderboard(limit: number, minGames: number): Promise<User[]>;
   rankOf(userId: number, minGames: number): Promise<number | null>;
-  recentMatches(userId: number, limit: number): Promise<Omit<MatchRow, "log">[]>;
+  recentMatches(userId: number, limit: number): Promise<Omit<MatchRow, "log" | "decks">[]>;
   close(): Promise<void>;
 }
 
@@ -82,7 +86,7 @@ export class MemoryStore implements Store {
     if (this.byName.has(key)) return null;
     const u: UserWithHash = {
       id: this.nextId++, username, passwordHash, rating: DEFAULT_RATING, rd: DEFAULT_RD, vol: DEFAULT_VOL,
-      wins: 0, losses: 0, draws: 0, createdAt: new Date(), lastMatchAt: null,
+      wins: 0, losses: 0, draws: 0, createdAt: new Date(), lastMatchAt: null, deck: null,
     };
     this.users.set(u.id, u);
     this.byName.set(key, u.id);
@@ -95,6 +99,10 @@ export class MemoryStore implements Store {
   async getUser(id: number) {
     const u = this.users.get(id);
     return u ? strip(u) : null;
+  }
+  async saveDeck(userId: number, deck: string[]) {
+    const u = this.users.get(userId);
+    if (u) u.deck = [...deck];
   }
   async createSession(tokenHash: string, userId: number, expiresAt: Date) {
     this.sessions.set(tokenHash, { userId, expiresAt });
@@ -144,7 +152,7 @@ export class MemoryStore implements Store {
       .filter((m) => m.p0 === userId || m.p1 === userId)
       .sort((a, b) => b.endedAt.getTime() - a.endedAt.getTime())
       .slice(0, limit)
-      .map(({ log: _log, ...rest }) => rest);
+      .map(({ log: _log, decks: _d, ...rest }) => rest);
   }
 }
 const strip = (u: UserWithHash): User => {
@@ -198,6 +206,8 @@ CREATE TABLE IF NOT EXISTS matches (
   p1_before  DOUBLE PRECISION, p1_after DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS matches_p0_idx ON matches (p0, ended_at DESC);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deck JSONB;
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS decks JSONB;
 CREATE INDEX IF NOT EXISTS matches_p1_idx ON matches (p1, ended_at DESC);
 `;
 
@@ -205,6 +215,7 @@ function rowToUser(r: any): User {
   return {
     id: Number(r.id), username: r.username, rating: Number(r.rating), rd: Number(r.rd), vol: Number(r.vol),
     wins: r.wins, losses: r.losses, draws: r.draws, createdAt: r.created_at, lastMatchAt: r.last_match_at,
+    deck: Array.isArray(r.deck) ? r.deck : null,
   };
 }
 function rowToMatch(r: any): MatchRow {
@@ -212,10 +223,11 @@ function rowToMatch(r: any): MatchRow {
     code: r.code, ranked: r.ranked, p0: r.p0 === null ? null : Number(r.p0), p1: r.p1 === null ? null : Number(r.p1),
     p0Name: r.p0_name, p1Name: r.p1_name, winner: r.winner, crowns: [r.crowns0, r.crowns1], reason: r.reason,
     ticks: r.ticks, hash: Number(r.hash), seed: Number(r.seed), log: r.log ?? [], endedAt: r.ended_at,
+    decks: r.decks ?? [DEFAULT_DECK, DEFAULT_DECK],
     ratings: r.p0_before === null ? null : [[Number(r.p0_before), Number(r.p0_after)], [Number(r.p1_before), Number(r.p1_after)]],
   };
 }
-const USER_COLS = "id, username, rating, rd, vol, wins, losses, draws, created_at, last_match_at";
+const USER_COLS = "id, username, rating, rd, vol, wins, losses, draws, created_at, last_match_at, deck";
 
 export class PgStore implements Store {
   kind = "postgres" as const;
@@ -251,6 +263,9 @@ export class PgStore implements Store {
     const r = await this.pool.query(`SELECT ${USER_COLS} FROM users WHERE id = $1`, [id]);
     return r.rows[0] ? rowToUser(r.rows[0]) : null;
   }
+  async saveDeck(userId: number, deck: string[]) {
+    await this.pool.query("UPDATE users SET deck = $2 WHERE id = $1", [userId, JSON.stringify(deck)]);
+  }
   async createSession(tokenHash: string, userId: number, expiresAt: Date) {
     await this.pool.query("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3)", [tokenHash, userId, expiresAt]);
   }
@@ -271,13 +286,14 @@ export class PgStore implements Store {
       await c.query("BEGIN");
       await c.query(
         `INSERT INTO matches (code, ranked, p0, p1, p0_name, p1_name, winner, crowns0, crowns1, reason, ticks, hash, seed, log,
-           ended_at, p0_before, p0_after, p1_before, p1_after)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+           ended_at, p0_before, p0_after, p1_before, p1_after, decks)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
          ON CONFLICT (code) DO NOTHING`,
         [
           m.code, m.ranked, m.p0, m.p1, m.p0Name, m.p1Name, m.winner, m.crowns[0], m.crowns[1], m.reason, m.ticks,
           m.hash, m.seed, JSON.stringify(m.log), m.endedAt,
           m.ratings?.[0][0] ?? null, m.ratings?.[0][1] ?? null, m.ratings?.[1][0] ?? null, m.ratings?.[1][1] ?? null,
+          JSON.stringify(m.decks),
         ],
       );
       for (const up of updates) {
@@ -324,7 +340,7 @@ export class PgStore implements Store {
       [userId, limit],
     );
     return r.rows.map((row: any) => {
-      const { log: _l, ...rest } = rowToMatch({ ...row, log: [] });
+      const { log: _l, decks: _d, ...rest } = rowToMatch({ ...row, log: [] });
       return rest;
     });
   }

@@ -313,11 +313,11 @@ function drawClouds(dt: number) {
 }
 
 // ------------------------------------------------------------------ effects
-interface Projectile { kind: "arrow" | "orb" | "bolt" | "spit" | "bigorb"; from: number; to: number; x1: number; y1: number; x2: number; y2: number; t0: number; dur: number; team: Team }
+interface Projectile { kind: "arrow" | "orb" | "bolt" | "spit" | "bigorb" | "bomb" | "ball" | "mote"; from: number; to: number; x1: number; y1: number; x2: number; y2: number; t0: number; dur: number; team: Team; splash?: number }
 interface Particle { x: number; y: number; vx: number; vy: number; g: number; life: number; max: number; size: number; color: string; shrink: boolean }
 interface Floater { id: number; x: number; y: number; amount: number; t0: number; color: string }
 interface Decal { x: number; y: number; r: number; t0: number }
-interface Bolt { pts: number[]; t0: number }
+interface Bolt { pts: number[]; t0: number; big?: boolean }
 interface Ring { x: number; y: number; r: number; t0: number; dur: number; color: string }
 
 let projectiles: Projectile[] = [];
@@ -328,6 +328,7 @@ let bolts: Bolt[] = [];
 let rings: Ring[] = [];
 let banner: { text: string; color: string; t0: number } | null = null;
 let shakeUntil = 0;
+let flashUntil = 0;
 let shakeAmp = 0;
 const lastAttack = new Map<number, { t: number; x: number; y: number }>();
 const facing = new Map<number, 1 | -1>();
@@ -386,15 +387,19 @@ export function observe(game: GameState, now: number, quiet = false) {
         const card = a?.card ?? "";
         const team = teamOf(ev.owner);
         lastAttack.set(ev.from, { t: now, x: ev.x2, y: ev.y2 });
-        const kind: Projectile["kind"] | null =
-          card === "princess" ? "orb" : card === "king" ? "bigorb" : card === "ranger" ? "arrow" : card === "bulwark" ? "bolt" : card === "skywing" ? "spit" : null;
+        const KINDS: Record<string, Projectile["kind"]> = {
+          princess: "orb", king: "bigorb", ranger: "arrow", twinrangers: "arrow", bulwark: "bolt", skywing: "spit",
+          bombardier: "bomb", cannon: "ball", wisps: "mote",
+        };
+        const kind: Projectile["kind"] | null = KINDS[card] ?? null;
         if (card === "sparkcaster") {
           bolts.push({ pts: jag(ev.x1, ev.y1 - 900, ev.x2, ev.y2), t0: now });
           rings.push({ x: ev.x2, y: ev.y2, r: ev.splash, t0: now, dur: 300, color: "rgba(150,235,255," });
           snd(sfx.zap);
         } else if (kind) {
           const dist = Math.hypot(ev.x2 - ev.x1, ev.y2 - ev.y1);
-          projectiles.push({ kind, from: ev.from, to: ev.to, x1: ev.x1, y1: ev.y1, x2: ev.x2, y2: ev.y2, t0: now, dur: Math.min(320, 80 + dist / 30), team });
+          const dur = kind === "bomb" ? 420 : Math.min(320, 80 + dist / 30);
+          projectiles.push({ kind, from: ev.from, to: ev.to, x1: ev.x1, y1: ev.y1, x2: ev.x2, y2: ev.y2, t0: now, dur, team, splash: ev.splash });
           snd(sfx.shoot);
         } else {
           burst(SX(ev.x2), SY(ev.y2) - L(500), 5, ["#fff6d6", "#ffd27a"], 220 * dpr, 3 * dpr, 0.25, 0);
@@ -403,6 +408,16 @@ export function observe(game: GameState, now: number, quiet = false) {
         break;
       }
       case "spell":
+        if (ev.card === "zap") {
+          bolts.push({ pts: jag(ev.x - 300, ev.y - 9000, ev.x, ev.y), t0: now, big: true });
+          bolts.push({ pts: jag(ev.x + 400, ev.y - 7000, ev.x, ev.y), t0: now + 40, big: true });
+          rings.push({ x: ev.x, y: ev.y, r: ev.r, t0: now, dur: 380, color: "rgba(170,240,255," });
+          burst(SX(ev.x), SY(ev.y), 22, ["#e9fbff", "#9fe8ff", "#ffffff"], 420 * dpr, 4 * dpr, 0.45, 200);
+          flashUntil = now + 90;
+          shake(4, 160);
+          snd(sfx.zap);
+          break;
+        }
         rings.push({ x: ev.x, y: ev.y, r: ev.r, t0: now, dur: 450, color: "rgba(255,170,60," });
         decals.push({ x: ev.x, y: ev.y, r: ev.r * 0.7, t0: now });
         burst(SX(ev.x), SY(ev.y), 34, ["#ffd23f", "#ff8a1f", "#ff5a1f", "#fff2b0"], 520 * dpr, 6 * dpr, 0.7, 500);
@@ -593,10 +608,15 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   });
   ctx.globalAlpha = 1;
   if (e.deployTicks === 0 && e.hp < e.maxHp) {
-    const top = py - r * (e.card === "ironhide" ? 1.95 : e.card === "bulwark" ? 2.1 : e.flying ? 1.5 : 2.1);
+    const top = py - r * (BAR_AT[e.card] ?? (e.flying ? 1.6 : 2.65));
     unitBar(px, top, Math.max(r * 1.6, 20 * dpr), e.hp / e.maxHp, team);
   }
 }
+
+/** where the health bar sits above each sprite, in body radii */
+const BAR_AT: Record<string, number> = {
+  ironhide: 2.15, colossus: 2.3, bulwark: 2.2, cannon: 1.4, swarmlings: 2.2, wisps: 2.2, skywing: 1.6, skyrider: 3.0,
+};
 
 function unitBar(cx: number, top: number, w: number, frac: number, team: Team) {
   const h = Math.max(3, 4 * dpr);
@@ -631,6 +651,17 @@ function roundRect(x: number, y: number, w: number, h: number, r: number) {
 }
 
 function drawMeteor(e: Entity, alpha: number, t: number) {
+  if (e.card === "zap") {
+    ctx.save();
+    ctx.strokeStyle = "rgba(170,240,255,.8)";
+    ctx.setLineDash([L(160), L(140)]);
+    ctx.lineWidth = Math.max(1.5, L(80));
+    ctx.beginPath();
+    ctx.ellipse(SX(e.x), SY(e.y), L(e.spellRadius), L(e.spellRadius) * 0.75, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
   // falls from the sky over the spell delay, lands exactly when it explodes
   const left = Math.max(0, e.deployTicks - alpha);
   const k = left / SPELL_DELAY;
@@ -677,6 +708,34 @@ function drawProjectiles(game: GameState, now: number) {
       ctx.lineTo(L(180), -L(70));
       ctx.lineTo(L(180), L(70));
       ctx.fill();
+    } else if (p.kind === "bomb") {
+      // lobbed: big arc, lands with a splash
+      const arcY = y - Math.sin(k * Math.PI) * L(1600);
+      ctx.restore();
+      ctx.save();
+      bombIcon(x, arcY, L(220), now);
+      if (k > 0.9 && !(p as any).boom) {
+        (p as any).boom = true;
+        rings.push({ x: x2, y: y2, r: p.splash ?? 1300, t0: now, dur: 300, color: "rgba(255,190,90," });
+        burst(SX(x2), SY(y2), 14, ["#ffd27a", "#ff8a1f", "#6b6b6b"], 300 * dpr, 4 * dpr, 0.45, 300);
+        snd(sfx.hit);
+      }
+    } else if (p.kind === "ball") {
+      ctx.fillStyle = "#2a2d36";
+      ctx.beginPath();
+      ctx.arc(x, y, L(150), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,.5)";
+      ctx.beginPath();
+      ctx.arc(x - L(50), y - L(50), L(45), 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.kind === "mote") {
+      ctx.shadowColor = p.team.main;
+      ctx.shadowBlur = L(300);
+      ctx.fillStyle = p.team.light;
+      ctx.beginPath();
+      ctx.arc(x, y, L(90), 0, Math.PI * 2);
+      ctx.fill();
     } else if (p.kind === "spit") {
       drawFireball(ctx, x, y, L(170), Math.cos(ang), Math.sin(ang), now / 1000);
     } else {
@@ -705,14 +764,19 @@ function drawProjectiles(game: GameState, now: number) {
 }
 
 function drawBolts(now: number) {
-  bolts = bolts.filter((b) => now - b.t0 < 160);
+  if (now < flashUntil) {
+    ctx.fillStyle = `rgba(220,245,255,${0.25 * (flashUntil - now) / 90})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  bolts = bolts.filter((b) => now - b.t0 < (b.big ? 260 : 160));
   for (const b of bolts) {
-    const a = 1 - (now - b.t0) / 160;
+    if (now < b.t0) continue;
+    const a = 1 - (now - b.t0) / (b.big ? 260 : 160);
     ctx.save();
     ctx.strokeStyle = `rgba(200,250,255,${a})`;
     ctx.shadowColor = "#7fe7ff";
     ctx.shadowBlur = L(400);
-    ctx.lineWidth = Math.max(1.5, L(90));
+    ctx.lineWidth = Math.max(1.5, L(b.big ? 160 : 90));
     ctx.beginPath();
     for (let i = 0; i < b.pts.length; i += 2) {
       const x = SX(b.pts[i]);
@@ -876,4 +940,19 @@ function drawBanner(now: number) {
   ctx.fillStyle = banner.color;
   ctx.fillText(banner.text, 0, 0);
   ctx.restore();
+}
+
+function bombIcon(x: number, y: number, r: number, now: number) {
+  ctx.fillStyle = "#2c2f3a";
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  ctx.beginPath();
+  ctx.arc(x - r * 0.35, y - r * 0.35, r * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = Math.sin(now * 0.05) > 0 ? "#ffd23f" : "#ff8a1f";
+  ctx.beginPath();
+  ctx.arc(x + r * 0.7, y - r * 0.9, r * 0.35, 0, Math.PI * 2);
+  ctx.fill();
 }

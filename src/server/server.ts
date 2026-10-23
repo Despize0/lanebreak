@@ -12,7 +12,7 @@ import {
   ARENA_H, ARENA_W, TICK_RATE, createGame, hashState, step,
   type GameState, type Input, type PlayerId,
 } from "../sim/sim";
-import { CARDS } from "../sim/cards";
+import { CARDS, DEFAULT_DECK, isValidDeck } from "../sim/cards";
 import { MAX_MSG_BYTES, type ClientMsg, type LogEntry, type ServerMsg, type WireInput } from "../net/protocol";
 import { PLACEMENT_GAMES, tierFor, type PlayerInfo, type PublicUser } from "../net/tiers";
 import { makeStore, type MatchRow, type RatingUpdate, type User } from "./store";
@@ -48,6 +48,7 @@ interface Conn {
   queuedAt: number;
   user: User | null;
   guestName: string;
+  deck: string[];
   chain: Promise<void>; // messages from one socket are handled strictly in order
 }
 
@@ -60,6 +61,7 @@ interface Seat {
   info: PlayerInfo;
   rating: Rating | null; // at match start (ranked)
   lastMatchAt: Date | null;
+  deck: string[];
 }
 
 interface Room {
@@ -111,12 +113,13 @@ const log = (...args: unknown[]) => console.log(new Date().toISOString(), ...arg
 // ------------------------------------------------------------------ users
 const gamesOf = (u: User) => u.wins + u.losses + u.draws;
 
-function toPublic(u: User, rank: number | null = null): PublicUser {
+function toPublic(u: User, rank: number | null = null, self = false): PublicUser {
   const games = gamesOf(u);
   const placed = games >= PLACEMENT_GAMES;
   return {
     id: u.id, name: u.username, rating: Math.round(u.rating), games, wins: u.wins, losses: u.losses, draws: u.draws,
     placed, tier: placed ? tierFor(u.rating).name : "Unranked", rank,
+    ...(self ? { deck: isValidDeck(u.deck) ? u.deck : null } : {}),
   };
 }
 
@@ -129,7 +132,7 @@ function infoFor(conn: Conn): PlayerInfo {
 async function sendMe(conn: Conn) {
   if (!conn.user) return send(conn, { t: "me", user: null });
   const rank = await store.rankOf(conn.user.id, PLACEMENT_GAMES).catch(() => null);
-  send(conn, { t: "me", user: toPublic(conn.user, rank) });
+  send(conn, { t: "me", user: toPublic(conn.user, rank, true) });
 }
 
 // ------------------------------------------------------------------ rooms
@@ -140,6 +143,7 @@ function newSeat(conn: Conn): Seat {
     info: infoFor(conn),
     rating: conn.user ? { rating: conn.user.rating, rd: conn.user.rd, vol: conn.user.vol } : null,
     lastMatchAt: conn.user?.lastMatchAt ?? null,
+    deck: [...conn.deck],
   };
 }
 
@@ -160,17 +164,20 @@ function seatSecond(room: Room, conn: Conn): void {
   room.seats[1] = newSeat(conn);
   conn.room = room;
   conn.player = 1;
+  room.game = createGame(room.seed, decksOf(room));
   room.startAt = Date.now() + COUNTDOWN_MS;
   for (const s of room.seats) if (s?.userId) usersInMatch.set(s.userId, room);
   for (const p of [0, 1] as PlayerId[]) sendStart(room, p);
   log(`match ${room.code} starting${room.ranked ? " (ranked)" : ""}: ${room.seats[0].info.name} vs ${room.seats[1]!.info.name}`);
 }
 
+const decksOf = (room: Room): [string[], string[]] => [room.seats[0].deck, room.seats[1]?.deck ?? DEFAULT_DECK];
+
 function sendStart(room: Room, p: PlayerId): void {
   const seat = room.seats[p]!;
   send(seat.conn, {
     t: "start", code: room.code, token: seat.token, you: p, seed: room.seed, tick: room.game.tick, log: room.log,
-    ranked: room.ranked, players: [room.seats[0].info, room.seats[1]!.info],
+    ranked: room.ranked, players: [room.seats[0].info, room.seats[1]!.info], decks: decksOf(room),
   });
 }
 
@@ -226,7 +233,7 @@ async function endRoom(room: Room, winner: PlayerId | -1, reason: "towers" | "fo
   const row: MatchRow = {
     code: room.code, ranked: room.ranked, p0: s0.userId, p1: s1.userId, p0Name: s0.info.name, p1Name: s1.info.name,
     winner, crowns, reason: abandoned ? "abandoned" : reason, ticks: g.tick, hash, seed: room.seed, log: room.log,
-    endedAt, ratings: ratings ?? null,
+    decks: decksOf(room), endedAt, ratings: ratings ?? null,
   };
   try {
     await store.saveMatch(row, updates);
@@ -355,14 +362,17 @@ function parse(raw: string): ClientMsg | null {
   }
   if (!m || typeof m !== "object" || typeof m.t !== "string") return null;
   switch (m.t) {
-    case "create": case "leave":
-      return { t: m.t };
+    case "leave":
+      return { t: "leave" };
+    case "create":
+      return { t: "create", deck: isValidDeck(m.deck) ? m.deck : undefined };
     case "queue":
-      return { t: "queue", ranked: m.ranked === true };
+      return { t: "queue", ranked: m.ranked === true, deck: isValidDeck(m.deck) ? m.deck : undefined };
     case "auth":
       return typeof m.token === "string" && m.token.length > 10 && m.token.length < 100 ? { t: "auth", token: m.token } : null;
     case "join":
-      return typeof m.code === "string" && CODE_RE.test(m.code.toUpperCase()) ? { t: "join", code: m.code.toUpperCase() } : null;
+      return typeof m.code === "string" && CODE_RE.test(m.code.toUpperCase())
+        ? { t: "join", code: m.code.toUpperCase(), deck: isValidDeck(m.deck) ? m.deck : undefined } : null;
     case "rejoin":
       return typeof m.code === "string" && typeof m.token === "string" && m.token.length === 32
         ? { t: "rejoin", code: m.code.toUpperCase(), token: m.token } : null;
@@ -377,6 +387,13 @@ function parse(raw: string): ClientMsg | null {
       return isInt(m.n) ? { t: "ping", n: m.n } : null;
   }
   return null;
+}
+
+/** Deck sent with the request, else the account's saved deck, else the starter deck. */
+function pickDeck(conn: Conn, sent?: string[]): string[] {
+  if (sent && isValidDeck(sent)) return [...sent];
+  if (conn.user && isValidDeck(conn.user.deck)) return [...conn.user.deck];
+  return [...DEFAULT_DECK];
 }
 
 function busy(conn: Conn): string | null {
@@ -399,6 +416,7 @@ async function handle(conn: Conn, msg: ClientMsg): Promise<void> {
     }
 
     case "queue": {
+      conn.deck = pickDeck(conn, msg.deck);
       const b = busy(conn);
       if (b) return send(conn, { t: "err", msg: b });
       if (conn.queued) return;
@@ -433,6 +451,7 @@ async function handle(conn: Conn, msg: ClientMsg): Promise<void> {
     }
 
     case "create": {
+      conn.deck = pickDeck(conn, msg.deck);
       const b = busy(conn);
       if (b) return send(conn, { t: "err", msg: b });
       leaveQueues(conn);
@@ -441,6 +460,7 @@ async function handle(conn: Conn, msg: ClientMsg): Promise<void> {
     }
 
     case "join": {
+      conn.deck = pickDeck(conn, msg.deck);
       const b = busy(conn);
       if (b) return send(conn, { t: "err", msg: b });
       const r = rooms.get(msg.code);
@@ -497,7 +517,7 @@ async function handle(conn: Conn, msg: ClientMsg): Promise<void> {
       const seat = room.seats[conn.player]!;
       seat.desyncs++;
       log(`match ${room.code}: player ${conn.player} desync at tick ${msg.tick} (#${seat.desyncs})`);
-      send(conn, { t: "sync", seed: room.seed, tick: room.game.tick, log: room.log });
+      send(conn, { t: "sync", seed: room.seed, tick: room.game.tick, log: room.log, decks: decksOf(room) });
       return;
     }
 
@@ -593,7 +613,7 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string): Pro
     const user = await store.createUser(body.username, await hashPassword(body.password));
     if (!user) return json(res, 409, { error: "That username is taken" });
     log(`new account: ${user.username}`);
-    return json(res, 200, { token: await issueSession(user), user: toPublic(user) });
+    return json(res, 200, { token: await issueSession(user), user: toPublic(user, null, true) });
   }
 
   if (path === "/api/login" && method === "POST") {
@@ -611,7 +631,7 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string): Pro
     if (!(await verifyPassword(pw, user.passwordHash))) return json(res, 401, { error: "Wrong username or password" });
     const { passwordHash: _h, ...safe } = user;
     const rank = await store.rankOf(user.id, PLACEMENT_GAMES);
-    return json(res, 200, { token: await issueSession(safe), user: toPublic(safe, rank) });
+    return json(res, 200, { token: await issueSession(safe), user: toPublic(safe, rank, true) });
   }
 
   if (path === "/api/logout" && method === "POST") {
@@ -620,12 +640,21 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string): Pro
     return json(res, 200, { ok: true });
   }
 
+  if (path === "/api/deck" && (method === "PUT" || method === "POST")) {
+    const u = await userFromRequest(req);
+    if (!u) return json(res, 401, { error: "Not signed in" });
+    const body = await readBody(req);
+    if (!isValidDeck(body.deck)) return json(res, 400, { error: "A deck needs 8 different cards" });
+    await store.saveDeck(u.id, body.deck);
+    return json(res, 200, { ok: true, deck: body.deck });
+  }
+
   if (method !== "GET") return json(res, 405, { error: "method not allowed" });
 
   if (path === "/api/me") {
     const u = await userFromRequest(req);
     if (!u) return json(res, 401, { error: "Not signed in" });
-    return json(res, 200, { user: toPublic(u, await store.rankOf(u.id, PLACEMENT_GAMES)) });
+    return json(res, 200, { user: toPublic(u, await store.rankOf(u.id, PLACEMENT_GAMES), true) });
   }
 
   if (path === "/api/leaderboard") {
@@ -701,7 +730,7 @@ const wss = new WebSocketServer({ server: http, path: "/ws", maxPayload: MAX_MSG
 wss.on("connection", (ws) => {
   const conn: Conn = {
     id: nextConnId++, ws, room: null, player: null, tokens: RATE_CAPACITY, lastRefill: Date.now(),
-    queued: null, queuedAt: 0, user: null, guestName: `Guest${randomInt(1000, 10000)}`,
+    queued: null, queuedAt: 0, user: null, guestName: `Guest${randomInt(1000, 10000)}`, deck: [...DEFAULT_DECK],
     chain: Promise.resolve(),
   };
   const live = ws as WebSocket & { _lbAlive?: boolean };

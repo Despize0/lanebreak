@@ -84,7 +84,7 @@ export interface Input {
 export type SimEvent =
   | { type: "deploy"; owner: PlayerId; card: string; x: number; y: number }
   | { type: "attack"; from: number; to: number; x1: number; y1: number; x2: number; y2: number; splash: number; owner: PlayerId }
-  | { type: "spell"; owner: PlayerId; x: number; y: number; r: number }
+  | { type: "spell"; owner: PlayerId; card: string; x: number; y: number; r: number }
   | { type: "death"; owner: PlayerId; kind: EntityKind; x: number; y: number }
   | { type: "crown"; owner: PlayerId }
   | { type: "reject"; player: PlayerId; reason: string };
@@ -175,15 +175,22 @@ export function canDeployAt(s: GameState, player: PlayerId, kind: string, x: num
   return pocketOk && !overlapsTower(s, x, y);
 }
 
+/** Only the tile a tower stands on is blocked. Troops placed right next to or behind a tower
+ *  are allowed; they get nudged clear of its walls while they drop in. */
 function overlapsTower(s: GameState, x: number, y: number): boolean {
   for (const e of s.entities) {
-    if (e.kind === "tower" && e.hp > 0 && distSq(x, y, e.x, e.y) < e.radius * e.radius) return true;
+    const block = Math.trunc((e.radius * 55) / 100);
+    if (e.kind === "tower" && e.hp > 0 && distSq(x, y, e.x, e.y) < block * block) return true;
   }
   return false;
 }
 
-// Fixed spawn offsets for multi-unit cards (no trig at runtime = deterministic).
-const HEX = [[0, -900], [780, -450], [780, 450], [0, 900], [-780, 450], [-780, -450]];
+// Fixed spawn formations for multi-unit cards (no trig at runtime = deterministic), at spread 900.
+const FORMATIONS: Record<number, number[][]> = {
+  2: [[-650, 0], [650, 0]],
+  3: [[0, -600], [-560, 380], [560, 380]],
+  6: [[0, -900], [780, -450], [780, 450], [0, 900], [-780, 450], [-780, -450]],
+};
 
 function applyInput(s: GameState, inp: Input): void {
   const reject = (reason: string): void => {
@@ -209,7 +216,7 @@ function applyInput(s: GameState, inp: Input): void {
     e.damage = def.damage!;
     e.spellRadius = def.spellRadius!;
     e.towerPct = def.towerPct ?? 100;
-    e.deployTicks = SPELL_DELAY;
+    e.deployTicks = def.delay ?? SPELL_DELAY;
     s.entities.push(e);
     return;
   }
@@ -219,8 +226,9 @@ function applyInput(s: GameState, inp: Input): void {
     let y = inp.y;
     if (count > 1) {
       const sp = def.spread ?? 900;
-      x += Math.trunc((HEX[i % 6][0] * sp) / 900);
-      y += Math.trunc((HEX[i % 6][1] * sp) / 900);
+      const f = FORMATIONS[count] ?? FORMATIONS[6];
+      x += Math.trunc((f[i % f.length][0] * sp) / 900);
+      y += Math.trunc((f[i % f.length][1] * sp) / 900);
       x = Math.max(300, Math.min(ARENA_W - 300, x));
     }
     s.entities.push(spawnUnit(s.nextId++, inp.player, def, x, y));
@@ -418,7 +426,7 @@ function attack(s: GameState, a: Entity, t: Entity): void {
 
 function explodeSpell(s: GameState, sp: Entity): void {
   const r2 = sp.spellRadius * sp.spellRadius;
-  s.events.push({ type: "spell", owner: sp.owner, x: sp.x, y: sp.y, r: sp.spellRadius });
+  s.events.push({ type: "spell", owner: sp.owner, card: sp.card, x: sp.x, y: sp.y, r: sp.spellRadius });
   for (const b of s.entities) {
     if (b.owner === sp.owner || b.hp <= 0 || b.kind === "spell") continue;
     // count the target's body: hit if the blast circle touches it
@@ -593,8 +601,11 @@ export function hashState(s: GameState): number {
 }
 
 /** Run a full match from a seed and an input log. Used by replays and the server. */
-export function replay(seed: number, inputs: Input[], maxTicks = REGULATION_TICKS + OVERTIME_TICKS + 1) {
-  const s = createGame(seed);
+export function replay(
+  seed: number, inputs: Input[], decks: [string[], string[]] = [DEFAULT_DECK, DEFAULT_DECK],
+  maxTicks = REGULATION_TICKS + OVERTIME_TICKS + 1,
+) {
+  const s = createGame(seed, decks);
   const byTick = new Map<number, Input[]>();
   for (const i of inputs) {
     const arr = byTick.get(i.tick) ?? [];

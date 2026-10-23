@@ -4,7 +4,8 @@
 //    server's frames through the same deterministic sim and only ever sends "play card X at (x,y)".
 
 import { Bot } from "../ai/bot";
-import { CARDS } from "../sim/cards";
+import { CARD_LIST, CARDS, DEFAULT_DECK } from "../sim/cards";
+import { Rng } from "../sim/rng";
 import {
   DOUBLE_ELIXIR_AT, ELIXIR_UNIT, OVERTIME_TICKS, REGULATION_TICKS, TICK_RATE, canDeployAt, createGame, hashState, replay, step,
   type GameState, type Input, type PlayerId,
@@ -15,6 +16,7 @@ import { draw, observe, resetFx, resize, setPerspective, toWorld, type Mark } fr
 import { cardArt } from "./sprites";
 import { isMuted, setMuted, sfx, unlockAudio } from "./audio";
 import { getToken, getUser, initAccount, onAccountChange, openAuth, refreshMe, setUser, tierColor } from "./account";
+import { getDeck, initDeck } from "./deck";
 
 declare const __ONLINE__: boolean;
 
@@ -33,7 +35,7 @@ const canvas = $<HTMLCanvasElement>("arena");
 const stage = $("stage");
 const handEl = $("hand");
 
-const screens = ["startScreen", "authScreen", "boardScreen", "waitScreen", "endScreen"];
+const screens = ["startScreen", "authScreen", "boardScreen", "deckScreen", "waitScreen", "endScreen"];
 function show(id: string | null) {
   for (const s of screens) $(s).hidden = s !== id;
 }
@@ -45,6 +47,7 @@ let me: PlayerId = 0;
 let game: GameState = createGame(1);
 let bot: Bot | null = null;
 let seed = 0;
+let decks: [string[], string[]] = [DEFAULT_DECK, DEFAULT_DECK];
 let diff: Diff = "normal";
 let running = false;
 let ranked = false;
@@ -287,7 +290,7 @@ function finishLocal(serverEnd?: Extract<ServerMsg, { t: "end" }>) {
   }
   // Re-simulate from seed + inputs and compare: proves the result is reproducible.
   const live = hashState(game);
-  const ok = game.phase === "over" && hashState(replay(seed, inputLog).state) === live;
+  const ok = game.phase === "over" && hashState(replay(seed, inputLog, decks).state) === live;
   let html = ok ? `<b>Replay verified</b> · ${inputLog.length} inputs · hash ${hex(live)}` : "";
   if (serverEnd && game.phase === "over") {
     html += serverEnd.hash === live ? `<br><b>Matches server result</b>` : `<br>Server hash ${hex(serverEnd.hash)} differs`;
@@ -311,7 +314,8 @@ function startBot(d: Diff) {
   me = 0;
   setPerspective(0);
   seed = (Math.random() * 0xffffffff) >>> 0; // fine for local play; the server picks seeds online
-  game = createGame(seed);
+  decks = [getDeck(), botDeck(seed)];
+  game = createGame(seed, decks);
   bot = new Bot(1, { seed: seed ^ 0x5eed, ...DIFF[d] });
   resetView();
   running = true;
@@ -321,6 +325,17 @@ function startBot(d: Diff) {
   renderHand();
   renderScore();
   sfx.start();
+}
+
+/** The practice bot plays one of a few themed decks. */
+const BOT_DECKS = [
+  DEFAULT_DECK,
+  ["colossus", "twinrangers", "zap", "warden", "bombardier", "wisps", "cannon", "ember"],
+  ["skyrider", "zap", "swarmlings", "ranger", "cannon", "skywing", "warden", "ember"],
+  ["ironhide", "sparkcaster", "wisps", "brute", "zap", "bulwark", "twinrangers", "bombardier"],
+];
+function botDeck(s: number): string[] {
+  return [...BOT_DECKS[s % BOT_DECKS.length]];
 }
 
 function botTick() {
@@ -419,9 +434,10 @@ function setNet(text: string, level: "" | "warn" | "bad" = "") {
   el.className = `net ${level}`;
 }
 
-function rebuild(newSeed: number, log: LogEntry[], tick: number) {
+function rebuild(newSeed: number, log: LogEntry[], tick: number, d: [string[], string[]]) {
   seed = newSeed;
-  game = createGame(seed);
+  decks = d;
+  game = createGame(seed, decks);
   inputLog = log.map(([t, player, card, x, y]) => ({ tick: t, player, card, x, y }));
   const byTick = new Map<number, Input[]>();
   for (const i of inputLog) {
@@ -465,7 +481,7 @@ function onServer(m: ServerMsg) {
       serverEnd = null;
       oppGone = false;
       frames = [];
-      rebuild(m.seed, m.log, m.tick);
+      rebuild(m.seed, m.log, m.tick, m.decks);
       resetView();
       inputLog = m.log.map(([t, player, card, x, y]) => ({ tick: t, player, card, x, y }));
       running = game.phase !== "over";
@@ -496,7 +512,7 @@ function onServer(m: ServerMsg) {
       } else setNet("Rival is back");
       return;
     case "sync":
-      rebuild(m.seed, m.log, m.tick);
+      rebuild(m.seed, m.log, m.tick, m.decks);
       return;
     case "end":
       serverEnd = m;
@@ -584,13 +600,13 @@ function queueMatch(isRanked: boolean) {
     return openAuth("login", () => queueMatch(true), "Sign in to play ranked.");
   }
   showWait(isRanked ? "ranked" : "casual");
-  net.open(() => net.send({ t: "queue", ranked: isRanked }));
+  net.open(() => net.send({ t: "queue", ranked: isRanked, deck: getDeck() }));
 }
 function playFriend() {
   unlockAudio();
   showWait("friend");
   $("invite").hidden = true;
-  net.open(() => net.send({ t: "create" }));
+  net.open(() => net.send({ t: "create", deck: getDeck() }));
 }
 function joinCode(code: string) {
   code = code.trim().toUpperCase();
@@ -599,7 +615,7 @@ function joinCode(code: string) {
   try { token = sessionStorage.getItem(`lb:${code}`); } catch {}
   showWait("join", code);
   // a stored token means this tab was already in that match (page refresh): rejoin it
-  net.open(() => net.send(token ? { t: "rejoin", code, token } : { t: "join", code }));
+  net.open(() => net.send(token ? { t: "rejoin", code, token } : { t: "join", code, deck: getDeck() }));
 }
 
 // ------------------------------------------------------------------ main loop
@@ -685,6 +701,7 @@ $("rematch").addEventListener("click", () => {
 $("menu").addEventListener("click", () => backToMenu());
 
 initAccount(show);
+initDeck(show, toast);
 onAccountChange(() => {
   if (mode !== "online") renderNames();
   const u = getUser();
@@ -694,6 +711,7 @@ onAccountChange(() => {
 if (!__ONLINE__) {
   $("onlineGroup").hidden = true;
   $("signInBtn").hidden = true;
+  $("boardBtn").hidden = true;
   $("diffNormal").classList.add("primary");
 } else {
   void refreshMe();
@@ -704,7 +722,9 @@ if (!__ONLINE__) {
 // a live demo behind the menu: two bots playing
 {
   const demoBots = [new Bot(0, { seed: 3, thinkEvery: 14 }), new Bot(1, { seed: 4, thinkEvery: 14 })];
-  game = createGame(77);
+  const demoRng = new Rng(5);
+  const demoDecks = (): [string[], string[]] => [demoRng.shuffle([...CARD_LIST]).slice(0, 8), demoRng.shuffle([...CARD_LIST]).slice(0, 8)];
+  game = createGame(77, demoDecks());
   resetFx(game);
   let demoAcc = 0;
   let demoLast = performance.now();
@@ -716,7 +736,7 @@ if (!__ONLINE__) {
     while (demoAcc >= TICK_MS) {
       demoAcc -= TICK_MS;
       if (game.phase === "over") {
-        game = createGame((Math.random() * 1e9) >>> 0);
+        game = createGame((Math.random() * 1e9) >>> 0, demoDecks());
         resetFx(game);
       }
       const ins = demoBots.map((b) => b.decide(game)).filter((x): x is Input => !!x);

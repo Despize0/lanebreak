@@ -17,9 +17,9 @@ export type LogEntry = [number, PlayerId, string, number, number];
 
 export type ClientMsg =
   | { t: "auth"; token: string }
-  | { t: "queue"; ranked: boolean }
-  | { t: "create" }
-  | { t: "join"; code: string }
+  | { t: "queue"; ranked: boolean; deck?: string[] }
+  | { t: "create"; deck?: string[] }
+  | { t: "join"; code: string; deck?: string[] }
   | { t: "rejoin"; code: string; token: string }
   | { t: "play"; card: string; x: number; y: number }
   | { t: "hash"; tick: number; h: number }
@@ -32,7 +32,7 @@ export type ServerMsg =
   | { t: "room"; code: string }
   | {
       t: "start"; code: string; token: string; you: PlayerId; seed: number; tick: number; log: LogEntry[];
-      ranked: boolean; players: [PlayerInfo, PlayerInfo];
+      ranked: boolean; players: [PlayerInfo, PlayerInfo]; decks: [string[], string[]];
     }
   | { t: "f"; k: number; i?: WireInput[] }
   | { t: "rej"; reason: string }
@@ -41,8 +41,8 @@ export type ServerMsg =
       t: "end"; winner: PlayerId | -1; crowns: [number, number]; hash: number; reason: "towers" | "forfeit";
       ratings?: [[number, number], [number, number]]; // per seat: [before, after], ranked only
     }
-  | { t: "sync"; seed: number; tick: number; log: LogEntry[] }
+  | { t: "sync"; seed: number; tick: number; log: LogEntry[]; decks: [string[], string[]] }
   | { t: "err"; msg: string }
   | { t: "pong"; n: number };
 
-export const MAX_MSG_BYTES = 512;
+export const MAX_MSG_BYTES = 1024;

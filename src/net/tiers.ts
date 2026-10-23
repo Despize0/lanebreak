@@ -35,6 +35,7 @@ export interface PublicUser {
   placed: boolean;
   tier: string;
   rank?: number | null;
+  deck?: string[] | null; // only included for your own account
 }
 
 export interface PlayerInfo {

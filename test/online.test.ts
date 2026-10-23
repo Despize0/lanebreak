@@ -57,9 +57,11 @@ class Client {
   send(m: ClientMsg | Record<string, unknown>) {
     this.ws.send(JSON.stringify(m));
   }
-  rebuild(seed: number, log: LogEntry[], tick: number) {
+  decks: [string[], string[]] = [[], []];
+  rebuild(seed: number, log: LogEntry[], tick: number, decks: [string[], string[]]) {
     this.seed = seed;
-    const g = createGame(seed);
+    this.decks = decks;
+    const g = createGame(seed, decks);
     while (g.tick < tick) {
       step(g, log.filter((l) => l[0] === g.tick).map(([t, player, card, x, y]) => ({ tick: t, player, card, x, y })));
     }
@@ -75,7 +77,7 @@ class Client {
         this.me = m.you;
         this.code = m.code;
         this.token = m.token;
-        this.rebuild(m.seed, m.log, m.tick);
+        this.rebuild(m.seed, m.log, m.tick, m.decks);
         if (this.useBot) this.bot = new Bot(m.you, { seed: m.seed + m.you, thinkEvery: 10 });
         break;
       case "f": {
@@ -93,7 +95,7 @@ class Client {
       }
       case "sync":
         this.syncs++;
-        this.rebuild(m.seed, m.log, m.tick);
+        this.rebuild(m.seed, m.log, m.tick, m.decks);
         break;
       case "rej":
         this.rejects.push(m.reason);
@@ -140,7 +142,7 @@ test("two clients queue, play a full match, and agree with the server bit-for-bi
   // the stored match record replays to the same result
   const rec = await (await fetch(`http://127.0.0.1:${PORT}/api/matches/${a.code}`)).json();
   const inputs = (rec.log as LogEntry[]).map(([tick, player, card, x, y]) => ({ tick, player, card, x, y }));
-  assert.equal(hashState(replay(rec.seed, inputs).state), rec.hash);
+  assert.equal(hashState(replay(rec.seed, inputs, rec.decks).state), rec.hash);
   a.ws.close();
   b.ws.close();
 });
@@ -335,7 +337,7 @@ test("ranked: full match updates ratings, history and leaderboard", async () => 
   // the stored record replays to the same result
   const rec = await get(`/api/matches/${A.c.code}`);
   const inputs = (rec.body.log as LogEntry[]).map(([tick, player, card, x, y]) => ({ tick, player, card, x, y }));
-  assert.equal(hashState(replay(rec.body.seed, inputs).state), rec.body.hash);
+  assert.equal(hashState(replay(rec.body.seed, inputs, rec.body.decks).state), rec.body.hash);
   A.c.ws.close();
   B.c.ws.close();
 });
@@ -350,6 +352,28 @@ test("casual matches never change ratings", async () => {
   const me = await get("/api/me", A.token);
   assert.equal(me.body.user.rating, 1500);
   assert.equal(me.body.user.games, 0);
+  A.c.ws.close();
+  B.c.ws.close();
+});
+
+test("custom decks: used in the match, saved to the account, junk rejected", async () => {
+  const deckA = ["colossus", "zap", "wisps", "warden", "twinrangers", "skyrider", "bombardier", "cannon"];
+  const A = await authedClient();
+  const B = await authedClient();
+  // save a deck to A's account, and B sends an invalid one (falls back to the starter deck)
+  assert.equal((await fetch(`${HTTP}/api/deck`, { method: "PUT", headers: { "content-type": "application/json", authorization: `Bearer ${A.token}` }, body: JSON.stringify({ deck: deckA }) })).status, 200);
+  const bad = await fetch(`${HTTP}/api/deck`, { method: "PUT", headers: { "content-type": "application/json", authorization: `Bearer ${A.token}` }, body: JSON.stringify({ deck: ["zap", "zap"] }) });
+  assert.equal(bad.status, 400);
+  assert.deepEqual((await get("/api/me", A.token)).body.user.deck, deckA);
+  A.c.send({ t: "queue", ranked: false, deck: deckA });
+  B.c.send({ t: "queue", ranked: false, deck: ["megaknight", "zap"] });
+  await A.c.waitFor(() => !!A.c.end && !!B.c.end, 90000);
+  assert.deepEqual(A.c.start!.decks[A.c.me], deckA);
+  assert.deepEqual(A.c.start!.decks[B.c.me].slice().sort(), ["brute", "bulwark", "ember", "ironhide", "ranger", "skywing", "sparkcaster", "swarmlings"]);
+  // every card A played came from A's deck
+  const rec = (await get(`/api/matches/${A.c.code}`)).body;
+  for (const [, p, card] of rec.log as LogEntry[]) if (p === A.c.me) assert.ok(deckA.includes(card), card);
+  assert.equal(hashState(A.c.game!), A.c.end!.hash);
   A.c.ws.close();
   B.c.ws.close();
 });

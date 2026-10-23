@@ -160,6 +160,26 @@ input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
 .delta .up { color: var(--good); } .delta .down { color: #ff8f86; }
 .verify { font-size: 12px; color: var(--muted); line-height: 1.45; font-variant-numeric: tabular-nums; }
 .verify b { color: var(--good); font-weight: 800; }
+
+.deck-panel { width: min(360px, 100%); gap: 10px; }
+.deck-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.deck-meta { font-size: 13px; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+.deck-meta b { color: var(--text); }
+.deck-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.dcard { position: relative; appearance: none; border: 2px solid #4b5a99; border-radius: 9px; height: 78px; padding: 0 2px 3px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; color: var(--text); background: linear-gradient(180deg, #34428a, #222b5c); cursor: pointer; overflow: hidden; font-family: var(--font-ui); }
+.dcard .art { position: absolute; left: 50%; top: 2px; transform: translateX(-50%); width: 50px; height: 50px; pointer-events: none; }
+.dcard .art canvas { width: 50px; height: 50px; }
+.dcard .nm { position: relative; font-size: 11px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-shadow: 0 1px 0 #0b0f22; }
+.dcard .cost { position: absolute; top: 2px; left: 2px; z-index: 1; width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e3a6ff, var(--aether) 60%, #6a2aa8); font-family: var(--font-display); font-size: 11px; display: grid; place-items: center; color: #fff; }
+.dcard.in { border-color: var(--gold); }
+.dcard.focus { box-shadow: 0 0 0 2px rgba(255,255,255,.7); }
+.dcard.empty { border-style: dashed; background: transparent; color: var(--muted); cursor: default; justify-content: center; }
+.dcard:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.deck-info { background: var(--night-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; text-align: left; font-size: 13px; line-height: 1.35; min-height: 74px; }
+.deck-info b { font-family: var(--font-display); font-weight: 400; font-size: 17px; }
+.deck-info span { color: var(--muted); font-weight: 700; }
+.deck-info p { margin: 3px 0 0; color: var(--text); font-size: 13px; }
+.deck-info .deck-stats { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .card, .toast, .btn { transition: none; } .wait-title .dots::after { animation: none; content: "..."; } }
 </style>
 
@@ -196,6 +216,9 @@ input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
             <input id="joinCode" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Friend's code">
             <button class="btn" id="joinBtn" type="submit">Join</button>
           </form>
+        </div>
+        <div class="btns">
+          <button class="btn ghost" id="deckBtn" type="button">Deck</button>
           <button class="btn ghost" id="boardBtn" type="button">Leaderboard</button>
         </div>
         <div class="group">
@@ -226,6 +249,25 @@ input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
         <button class="btn primary big" id="authSubmit" type="submit">Sign in</button>
         <button class="btn ghost" id="authBack" type="button">Back</button>
       </form>
+    </div>
+
+    <div class="overlay" id="deckScreen" hidden>
+      <div class="panel deck-panel">
+        <div class="deck-head"><h2>Deck</h2><span class="deck-meta"><b id="deckCount">8/8</b> · <span id="deckAvg">Average cost 3.8</span></span></div>
+        <div class="deck-grid" id="deckSlots"></div>
+        <div class="deck-info" aria-live="polite">
+          <b id="deckInfoName">Card</b> <span id="deckInfoRole"></span>
+          <p id="deckInfoDesc"></p>
+          <p class="deck-stats" id="deckInfoStats"></p>
+        </div>
+        <div class="label">Tap cards to swap them in and out</div>
+        <div class="deck-grid" id="deckPool"></div>
+        <div class="btns">
+          <button class="btn ghost" id="deckBack" type="button">Back</button>
+          <button class="btn gold" id="deckSave" type="button">Save deck</button>
+        </div>
+        <button class="linkbtn" id="deckReset" type="button">Use the starter deck</button>
+      </div>
     </div>
 
     <div class="overlay" id="boardScreen" hidden>
