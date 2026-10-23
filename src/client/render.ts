@@ -414,6 +414,8 @@ let shakeAmp = 0;
 const lastAttack = new Map<number, { t: number; x: number; y: number }>();
 const facing = new Map<number, 1 | -1>();
 const viewDir = new Map<number, View>();
+/** Smoothed on-screen velocity and pending view/facing changes, so bumps don't make units flicker. */
+const motion = new Map<number, { vx: number; vy: number; faceAt: number; pend: View | null; pendAt: number }>();
 const hitAt = new Map<number, number>();
 let prevHp = new Map<number, number>();
 let deploying = new Set<number>();
@@ -448,6 +450,7 @@ export function resetFx(game: GameState) {
   lastAttack.clear();
   facing.clear();
   viewDir.clear();
+  motion.clear();
   hitAt.clear();
   prevHp = new Map(game.entities.map((e) => [e.id, e.hp]));
   deploying = new Set(game.entities.filter((e) => e.deployTicks > 0).map((e) => e.id));
@@ -703,11 +706,20 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   const p = ui.prevPos.get(e.id);
   const dx = p ? e.x - p.x : 0;
   const moving = !!p && Math.abs(e.x - p.x) + Math.abs(e.y - p.y) > 2;
+  let mo = motion.get(e.id);
+  if (!mo) motion.set(e.id, (mo = { vx: 0, vy: 0, faceAt: 0, pend: null, pendAt: 0 }));
+  // smooth the per-frame movement: collisions nudge units sideways for a frame or two
+  mo.vx += ((p ? dx : 0) - mo.vx) * 0.12;
+  mo.vy += ((p ? e.y - p.y : 0) - mo.vy) * 0.12;
   let face = facing.get(e.id) ?? (e.x < 9000 ? 1 : -1);
-  if (Math.abs(dx) > 3) face = dx > 0 ? 1 : -1;
   const la = lastAttack.get(e.id);
   const atk = la ? Math.min(1, (now - la.t) / 450) : 1;
-  if (la && atk < 1 && Math.abs(la.x - e.x) > 200) face = la.x > e.x ? 1 : -1;
+  let want = face;
+  if (la && atk < 1 && Math.abs(la.x - e.x) > 200) want = la.x > e.x ? 1 : -1;
+  else if (Math.abs(mo.vx) > 4 && Math.abs(mo.vx) > Math.abs(mo.vy) * 0.35) want = mo.vx > 0 ? 1 : -1;
+  // only turn around when it has been a moment since the last turn
+  if (want !== face && now - mo.faceAt > 300) { face = want; mo.faceAt = now; }
+  void dx;
   facing.set(e.id, face as 1 | -1);
   // melee lunge toward the target
   let lx = 0;
@@ -731,8 +743,14 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
     if (Math.abs(sdy) >= Math.abs(sdx) * 0.7) dir = sdy < 0 ? "back" : "front";
     else dir = "side";
   };
+  const prevDir = dir;
   if (la && atk < 1 && Math.hypot(la.x - e.x, la.y - e.y) > 150) pick(la.x - e.x, (la.y - e.y) * flipSign);
-  else if (moving && p) pick(e.x - p.x, (e.y - p.y) * flipSign);
+  else if (moving && Math.hypot(mo.vx, mo.vy) > 3) pick(mo.vx, mo.vy * flipSign);
+  if (dir !== prevDir && !(la && atk < 1)) {
+    // a new view has to hold for a moment before we switch pictures
+    if (mo.pend !== dir) { mo.pend = dir; mo.pendAt = now; }
+    if (now - mo.pendAt < 220) dir = prevDir;
+  } else mo.pend = null;
   viewDir.set(e.id, dir);
   const groundY = py;
   py -= lift;
@@ -810,11 +828,15 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   const w = cv.width * k;
   const fullH = cv.height * k;
   const walk = moving && !e.flying ? p_walk(t * Math.max(0.6, (e.speed || 50) / 50), e.id) : 0;
-  const bob = -Math.abs(walk) * r * (animated ? 0.04 : 0.12);
-  const tilt = animated ? 0 : moving ? walk * 0.06 : e.flying ? Math.sin(t * 2.5 + e.id) * 0.05 : 0;
+  // a stride: up on each step, a little settle when the foot lands; no side-to-side rocking
+  const stride = Math.abs(walk);
+  const bob = -stride * r * (animated ? 0.04 : 0.07);
+  const land = !animated && moving && !e.flying ? Math.max(0, 1 - stride * 4) : 0;
+  const tilt = e.flying && !animated ? Math.sin(t * 1.6 + e.id) * 0.018 : 0;
+  const breathe = !moving && !e.flying && !animated ? Math.sin(t * 2.2 + e.id) * 0.012 : 0;
   const squash = !animated && atk < 0.25 ? Math.sin((atk / 0.25) * Math.PI) : 0;
-  const sxk = 1 + squash * 0.08;
-  const syk = 1 - squash * 0.07;
+  const sxk = 1 + squash * 0.08 + land * 0.025;
+  const syk = 1 - squash * 0.07 - land * 0.035 + breathe;
   ctx.save();
   ctx.translate(px + lx, py + ly + bob + pad * k);
   ctx.rotate(tilt);
