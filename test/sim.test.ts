@@ -126,3 +126,22 @@ test("troops can be placed right behind and beside a tower, but not on it", () =
   assert.equal(canDeployAt(s, 0, "troop", 3500, 25500), false, "on the tower itself");
   assert.equal(canDeployAt(s, 0, "troop", 4500, 25500), true, "beside the tower");
 });
+
+test("troops placed behind towers walk around them and reach the bridge", () => {
+  const spots = [[3500, 26500], [3500, 27500], [14500, 26500], [9000, 30500], [8500, 31500], [1500, 25500]];
+  for (const card of ["colossus", "ironhide", "warden", "brute", "ranger", "skyrider", "bombardier"]) {
+    for (const [x, y] of spots) {
+      const deck = [card, ...["zap", "wisps", "cannon", "ember", "skywing", "swarmlings", "bulwark", "sparkcaster"].filter((c) => c !== card)].slice(0, 8);
+      const s = createGame(1, [deck, deck]);
+      s.players[0].elixir = 10 * ELIXIR_UNIT;
+      s.players[0].hand[0] = card;
+      step(s, [{ tick: 0, player: 0, card, x, y }]);
+      let crossed = false;
+      for (let t = 0; t < 1400 && !crossed; t++) {
+        step(s);
+        crossed = s.entities.some((e) => e.owner === 0 && e.kind === "troop" && e.y < 15000);
+      }
+      assert.ok(crossed, `${card} placed at ${x},${y} got stuck`);
+    }
+  }
+});

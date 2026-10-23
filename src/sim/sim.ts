@@ -332,9 +332,60 @@ function waypoint(a: Entity, tx: number, ty: number): [number, number] {
   const atEntry = Math.abs(a.x - laneX) <= 60 && (goingUp ? a.y <= nearEdge + 200 : a.y >= nearEdge - 200);
   if (inRiver || atEntry) {
     if (goingUp ? a.y <= farEdge : a.y >= farEdge) return [tx, ty];
-    return [laneX, farEdge];
+    // on the bridge, walk straight across in whatever lane we're in, so units going opposite
+    // ways (e.g. two tanks) slide past each other instead of both crowding the center line
+    const keepX = inRiver ? Math.max(bx - BRIDGE_HALF + 150, Math.min(bx + BRIDGE_HALF - 150, a.x)) : laneX;
+    return [keepX, farEdge];
   }
   return [laneX, nearEdge];
+}
+
+/**
+ * Steer ground troops around towers and buildings that sit between them and where they're going,
+ * instead of walking into the wall and getting pushed back (e.g. a troop placed right behind a tower).
+ * Picks the nearest blocking obstacle ahead and heads for a point just beside it; integer math only.
+ */
+function avoidObstacles(s: GameState, a: Entity, target: Entity, wx: number, wy: number): [number, number] {
+  if (a.flying) return [wx, wy];
+  const dx = wx - a.x;
+  const dy = wy - a.y;
+  const D = isqrt(dx * dx + dy * dy);
+  if (D === 0) return [wx, wy];
+  let best: Entity | null = null;
+  let bestAlong = 0;
+  let bestSide = 0;
+  for (const b of s.entities) {
+    if (b === target || b.hp <= 0 || (b.kind !== "tower" && b.kind !== "building")) continue;
+    const ox = b.x - a.x;
+    const oy = b.y - a.y;
+    const along = Math.trunc((ox * dx + oy * dy) / D); // distance ahead along the path
+    const clear = b.radius + a.radius + 120;
+    if (along <= -a.radius || along > Math.min(D, 4500) + b.radius) continue;
+    const side = Math.trunc((ox * -dy + oy * dx) / D); // signed distance of the obstacle from the path
+    if (Math.abs(side) >= clear) continue;
+    if (best === null || along < bestAlong || (along === bestAlong && b.id < best.id)) {
+      best = b;
+      bestAlong = along;
+      bestSide = side;
+    }
+  }
+  if (!best) return [wx, wy];
+  // pass on the side the obstacle isn't on; dead-center goes toward the middle of the arena
+  let dir = bestSide > 0 ? -1 : bestSide < 0 ? 1 : 0;
+  if (dir === 0) {
+    const toCenter = (LANE_SPLIT_X - a.x) * -dy; // which normal points toward the arena center
+    dir = toCenter > 0 ? 1 : toCenter < 0 ? -1 : a.id % 2 ? 1 : -1;
+  }
+  const clear = best.radius + a.radius + 240;
+  const nx = Math.trunc((-dy * clear) / D) * dir;
+  const ny = Math.trunc((dx * clear) / D) * dir;
+  // aim beside the obstacle and a little past it, so the unit keeps moving forward
+  const fx = Math.trunc((dx * 300) / D);
+  const fy = Math.trunc((dy * 300) / D);
+  let tx = best.x + nx + fx;
+  const ty = best.y + ny + fy;
+  tx = Math.max(a.radius, Math.min(ARENA_W - a.radius, tx));
+  return [tx, ty];
 }
 
 function moveToward(a: Entity, tx: number, ty: number): void {
@@ -480,7 +531,8 @@ function updateEntity(s: GameState, a: Entity): void {
       a.cooldown = a.hitTicks;
     }
   } else if (mobile) {
-    const [wx, wy] = waypoint(a, t.x, t.y);
+    const [px, py] = waypoint(a, t.x, t.y);
+    const [wx, wy] = avoidObstacles(s, a, t, px, py);
     moveToward(a, wx, wy);
     clamp(a);
   }
