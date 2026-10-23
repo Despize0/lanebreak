@@ -10,9 +10,10 @@ import {
 import { sfx } from "./audio";
 import { animFrame, spriteFor } from "./spriteCache";
 import { ANIM_BASE_HEIGHT, animKey } from "./unitAnim";
-import { towerImage } from "./towerSkins";
+import { kingImage, towerImage } from "./towerSkins";
 import { SPRITE_HEIGHT, spriteKey, type View } from "./unitSprites";
 import { BOWS, HEAVY, SLAMMERS, SWORD, WINGS, rigImage } from "./rig";
+import { RIG2_HEIGHT, RigDraw, rigFor } from "./rig2";
 import { BLUE, RED, cardArt, drawFireball, drawKeep, drawLighthouse, drawRubble, drawUnit, type Team } from "./sprites";
 
 export interface Mark { card: string; x: number; y: number; t: number }
@@ -679,7 +680,25 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
       ctx.fill();
     }
     const skinImg = e.card === "king" ? null : towerImage(ui.skins?.[e.owner] ?? "classic");
-    if (e.card === "king") drawKeep(ctx, px, py, r, team, e.active, t);
+    const kImg = e.card === "king" ? kingImage(team === BLUE) : null;
+    if (kImg) {
+      // floating-island keep: hovers gently; dozes (zZ) until it wakes up
+      const hh = r * 2.5;
+      const ww = (kImg.naturalWidth / kImg.naturalHeight) * hh;
+      const bobY = Math.sin(t * 1.3 + (team === BLUE ? 0 : 1.7)) * r * 0.03;
+      ctx.drawImage(kImg, px - ww / 2, py + r * 0.75 - hh + bobY, ww, hh);
+      if (!e.active) {
+        ctx.save();
+        ctx.fillStyle = "rgba(255,255,255,.85)";
+        ctx.font = `700 ${Math.round(r * 0.3)}px system-ui, sans-serif`;
+        const zt = (t * 0.6) % 1;
+        ctx.globalAlpha = 1 - zt;
+        ctx.fillText("z", px + r * 0.55, py - r * 1.2 - zt * r * 0.4);
+        ctx.globalAlpha = 0.6 * (1 - zt);
+        ctx.fillText("Z", px + r * 0.75, py - r * 1.45 - zt * r * 0.4);
+        ctx.restore();
+      }
+    } else if (e.card === "king") drawKeep(ctx, px, py, r, team, e.active, t);
     else if (skinImg) {
       // painted tower skin on a team-colored plinth
       ctx.save();
@@ -871,7 +890,132 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   const blade = sword ? rigImage(sk, view, "blade") : null;
   const wingL = wings ? rigImage(sk, view, "wingL") : null;
   const wingR = wings ? rigImage(sk, view, "wingR") : null;
-  if (sword && rBody && blade) {
+  const rig2 = animated ? null : rigFor(sk);
+  let rigFlash: (() => void) | null = null;
+  if (rig2) {
+    // multi-part rig: limbs, weapons and wings move on their own joints
+    const k2 = (h * (RIG2_HEIGHT[sk] ?? 1)) / rig2.h;
+    const R = new RigDraw(ctx, sk, rig2, k2);
+    const part = (n: string) => rig2.parts.find((q) => q.name === n)!;
+    const sw = walk;
+    rigFlash = () => R.drawBody();
+    if (sk === "warden") {
+      const arm = part("arm");
+      const shield = part("shield");
+      let a = -1.0 * windup + sw * 0.12;
+      if (cyc < 0.1) a = -1.0 + 2.3 * easeOut(cyc / 0.1);
+      else if (cyc < 0.35) a = 1.3 * (1 - easeInOut((cyc - 0.1) / 0.25));
+      R.drawBody();
+      if (cyc < 0.25 && a > -0.9) {
+        // slash trail around the shoulder
+        const [sx0, sy0] = R.body(arm.at);
+        const tip = R.partPt(arm, arm.pts.tip, 0);
+        const rad = Math.hypot(tip[0] - sx0, tip[1] - sy0);
+        const base = Math.atan2(tip[1] - sy0, tip[0] - sx0);
+        ctx.save();
+        ctx.globalAlpha *= 0.5 * (1 - cyc / 0.25);
+        ctx.strokeStyle = "#f4fbff";
+        ctx.lineWidth = rad * 0.28;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.arc(sx0, sy0, rad * 0.8, base - 1.0, base + a, false);
+        ctx.stroke();
+        ctx.restore();
+      }
+      R.drawPart(arm, a);
+      R.drawPart(shield, -0.12 * squash + sw * 0.03);
+    } else if (sk === "ranger") {
+      const bowP = part("bow");
+      const pull = part("pull");
+      const shoulder = R.body(bowP.at);
+      let aim = 0;
+      if (la && cyc < 1.6) {
+        // turn the bow arm toward the target
+        const lxT = ((SX(la.x) - tx) * fdir) / sxk;
+        const lyT = (SY(la.y) - ty) / syk;
+        aim = Math.max(-1.0, Math.min(0.9, Math.atan2(lyT - shoulder[1], lxT - shoulder[0]) - 0.3));
+      }
+      R.drawBody();
+      R.drawPart(bowP, aim);
+      const top = R.partPt(bowP, bowP.pts.tipTop, aim);
+      const bot = R.partPt(bowP, bowP.pts.tipBot, aim);
+      const nk = R.partPt(bowP, bowP.pts.nock, aim);
+      const dir = [Math.cos(bowP.rot + aim), Math.sin(bowP.rot + aim)];
+      const reach = Math.hypot(nk[0] - shoulder[0], nk[1] - shoulder[1]);
+      const pullD = easeInOut(windup) * reach * 0.8;
+      const N: [number, number] = [nk[0] - dir[0] * pullD, nk[1] - dir[1] * pullD];
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "rgba(240,232,205,.95)";
+      ctx.lineWidth = Math.max(1, 1.4 * k2);
+      ctx.beginPath();
+      ctx.moveTo(top[0], top[1]);
+      if (windup > 0.02) ctx.lineTo(N[0], N[1]);
+      else {
+        const amp = since < 260 ? Math.sin(since * 0.12) * (1 - since / 260) * 7 * k2 : 0;
+        ctx.quadraticCurveTo((top[0] + bot[0]) / 2 - dir[0] * amp, (top[1] + bot[1]) / 2 - dir[1] * amp, bot[0], bot[1]);
+      }
+      ctx.lineTo(bot[0], bot[1]);
+      ctx.stroke();
+      if (windup > 0.05) {
+        // nocked arrow
+        const L2 = reach * 1.25 + pullD;
+        const ex = N[0] + dir[0] * L2;
+        const ey = N[1] + dir[1] * L2;
+        ctx.strokeStyle = "#6e4320";
+        ctx.lineWidth = Math.max(1.2, 2.6 * k2);
+        ctx.beginPath();
+        ctx.moveTo(N[0], N[1]);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        const nx = -dir[1];
+        const ny = dir[0];
+        ctx.fillStyle = "#dfe6ee";
+        ctx.beginPath();
+        ctx.moveTo(ex + dir[0] * 9 * k2, ey + dir[1] * 9 * k2);
+        ctx.lineTo(ex + nx * 4 * k2, ey + ny * 4 * k2);
+        ctx.lineTo(ex - nx * 4 * k2, ey - ny * 4 * k2);
+        ctx.fill();
+        ctx.fillStyle = "#e8453c";
+        ctx.beginPath();
+        ctx.moveTo(N[0] + dir[0] * 10 * k2, N[1] + dir[1] * 10 * k2);
+        ctx.lineTo(N[0] + nx * 4 * k2, N[1] + ny * 4 * k2);
+        ctx.lineTo(N[0] - nx * 4 * k2, N[1] - ny * 4 * k2);
+        ctx.fill();
+      }
+      // the drawing hand holds the string
+      const hold: [number, number] = windup > 0.02 ? N : [nk[0] - dir[0] * reach * 0.15, nk[1] - dir[1] * reach * 0.15];
+      R.drawPart(pull, aim, hold);
+    } else if (sk === "colossus") {
+      const armL = part("armL");
+      const armR = part("armR");
+      let aL = sw * 0.22 - 1.8 * windup;
+      let aR = -sw * 0.22 + 1.8 * windup;
+      if (cyc < 0.15) {
+        const q = easeOut(cyc / 0.15);
+        aL = -1.8 + 2.2 * q;
+        aR = 1.8 - 2.2 * q;
+      } else if (cyc < 0.4) {
+        const q = (cyc - 0.15) / 0.25;
+        aL = 0.4 * (1 - q);
+        aR = -0.4 * (1 - q);
+      }
+      R.drawPart(armR, aR);
+      R.drawBody();
+      R.drawPart(armL, aL);
+    } else {
+      // skywing: wings beat around the shoulders (faster while breathing fire)
+      const beat = Math.sin(t * (windup > 0 || cyc < 0.4 ? 13 : 8) + e.id);
+      R.drawPart(part("wingR"), -beat * 0.35);
+      R.drawPart(part("wingL"), beat * 0.45);
+      R.drawBody();
+      if (rig2.pts.mouth) {
+        const [mx, my] = R.body(rig2.pts.mouth);
+        const sx = (mirror ? -sxk : sxk) * mx;
+        const sy = syk * my;
+        mouthW = [tx + sx * Math.cos(rot) - sy * Math.sin(rot), ty + sx * Math.sin(rot) + sy * Math.cos(rot)];
+      }
+    }
+  } else if (sword && rBody && blade) {
     // sword: raise it back during the wind-up, whip it through on the hit, settle back
     let a = -1.1 * windup;
     if (cyc < 0.1) a = -1.1 + 2.9 * easeOut(cyc / 0.1);
@@ -928,7 +1072,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   } else {
     ctx.drawImage(cv, left, -fullH, w, fullH);
   }
-  if (bow && !animated) {
+  if (bow && !animated && !rig2) {
     // archer: nock an arrow and pull the string back during the wind-up; the string twangs after the shot
     const T = loc(bow.top);
     const B = loc(bow.bot);
@@ -994,7 +1138,8 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
   if (hit !== undefined && now - hit < 90) {
     ctx.globalCompositeOperation = "lighter";
     ctx.globalAlpha = 0.45 * (1 - (now - hit) / 90);
-    if (flashImg === cv) ctx.drawImage(cv, left, -fullH, w, fullH);
+    if (rigFlash) rigFlash();
+    else if (flashImg === cv) ctx.drawImage(cv, left, -fullH, w, fullH);
     else layer(flashImg as HTMLImageElement);
   }
   ctx.restore();
