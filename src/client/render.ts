@@ -8,6 +8,8 @@ import {
   type Entity, type GameState, type PlayerId,
 } from "../sim/sim";
 import { sfx } from "./audio";
+import { spriteFor } from "./spriteCache";
+import { SPRITE_HEIGHT, type View } from "./unitSprites";
 import { BLUE, RED, cardArt, drawFireball, drawKeep, drawLighthouse, drawRubble, drawUnit, type Team } from "./sprites";
 
 export interface Mark { card: string; x: number; y: number; t: number }
@@ -390,6 +392,8 @@ let flashUntil = 0;
 let shakeAmp = 0;
 const lastAttack = new Map<number, { t: number; x: number; y: number }>();
 const facing = new Map<number, 1 | -1>();
+const viewDir = new Map<number, View>();
+const hitAt = new Map<number, number>();
 let prevHp = new Map<number, number>();
 let deploying = new Set<number>();
 const fxRand = new Rng(12345); // visual-only randomness, kept out of the sim
@@ -422,6 +426,8 @@ export function resetFx(game: GameState) {
   banner = null;
   lastAttack.clear();
   facing.clear();
+  viewDir.clear();
+  hitAt.clear();
   prevHp = new Map(game.entities.map((e) => [e.id, e.hp]));
   deploying = new Set(game.entities.filter((e) => e.deployTicks > 0).map((e) => e.id));
 }
@@ -504,6 +510,7 @@ export function observe(game: GameState, now: number, quiet = false) {
     if (before === undefined || e.hp >= before) continue;
     const dmg = before - e.hp;
     if (e.kind === "building" && dmg < 5) continue; // ignore decay
+    hitAt.set(e.id, now);
     const f = floaters.find((x) => x.id === e.id && now - x.t0 < 260);
     if (f) {
       f.amount += dmg;
@@ -660,17 +667,70 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
     const k = e.deployTicks / DEPLOY_TICKS;
     lift += k * k * canvas.height * 0.22;
   }
+  // which way the painted sprite looks: back when heading up the screen, front when heading down
+  const flipSign = flip() ? -1 : 1;
+  let dir = viewDir.get(e.id) ?? (e.owner === me ? "back" : "front");
+  const pick = (sdx: number, sdy: number) => {
+    if (Math.abs(sdy) >= Math.abs(sdx) * 0.7) dir = sdy < 0 ? "back" : "front";
+    else dir = "side";
+  };
+  if (la && atk < 1 && Math.hypot(la.x - e.x, la.y - e.y) > 150) pick(la.x - e.x, (la.y - e.y) * flipSign);
+  else if (moving && p) pick(e.x - p.x, (e.y - p.y) * flipSign);
+  viewDir.set(e.id, dir);
+  const groundY = py;
   py -= lift;
-  ctx.globalAlpha = e.deployTicks > 0 ? 0.9 : 1;
-  drawUnit(ctx, e.card, px + lx, py + ly, r, {
-    t, id: e.id, moving, face: face as 1 | -1, atk, hp: e.hp / e.maxHp, team,
-  });
+  const frame = spriteFor(e.card, dir, face as 1 | -1, team);
+  if (!frame) {
+    // no painted sprite for this unit: fall back to the code-drawn character
+    ctx.globalAlpha = e.deployTicks > 0 ? 0.9 : 1;
+    drawUnit(ctx, e.card, px + lx, py + ly, r, {
+      t, id: e.id, moving, face: face as 1 | -1, atk, hp: e.hp / e.maxHp, team,
+    });
+    ctx.globalAlpha = 1;
+    if (e.deployTicks === 0 && e.hp < e.maxHp) {
+      const top = py - r * (BAR_AT[e.card] ?? (e.flying ? 1.6 : 2.65));
+      unitBar(px, top, Math.max(r * 1.6, 20 * dpr), e.hp / e.maxHp, team);
+    }
+    return;
+  }
+  // team ring on the ground
+  ctx.strokeStyle = team.main;
+  ctx.globalAlpha = 0.75;
+  ctx.lineWidth = Math.max(1.5, 2 * dpr);
+  ctx.beginPath();
+  ctx.ellipse(px, groundY, r * 0.8, r * 0.32, 0, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.globalAlpha = 1;
+  const cv = frame.canvas;
+  const h = r * (SPRITE_HEIGHT[e.card] ?? 2.6);
+  const k = h / (cv.height - frame.pad * 2);
+  const w = cv.width * k;
+  const fullH = cv.height * k;
+  const walk = moving && !e.flying ? p_walk(t, e.id) : 0;
+  const bob = -Math.abs(walk) * r * 0.12;
+  const tilt = moving ? walk * 0.06 : e.flying ? Math.sin(t * 2.5 + e.id) * 0.05 : 0;
+  const squash = atk < 0.25 ? Math.sin((atk / 0.25) * Math.PI) : 0;
+  const sxk = 1 + squash * 0.08;
+  const syk = 1 - squash * 0.07;
+  ctx.save();
+  ctx.translate(px + lx, py + ly + bob + frame.pad * k);
+  ctx.rotate(tilt);
+  ctx.scale(frame.flip ? -sxk : sxk, syk);
+  ctx.globalAlpha = e.deployTicks > 0 ? 0.92 : 1;
+  ctx.drawImage(cv, -w / 2, -fullH, w, fullH);
+  const hit = hitAt.get(e.id);
+  if (hit !== undefined && now - hit < 90) {
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.45 * (1 - (now - hit) / 90);
+    ctx.drawImage(cv, -w / 2, -fullH, w, fullH);
+  }
+  ctx.restore();
   if (e.deployTicks === 0 && e.hp < e.maxHp) {
-    const top = py - r * (BAR_AT[e.card] ?? (e.flying ? 1.6 : 2.65));
-    unitBar(px, top, Math.max(r * 1.6, 20 * dpr), e.hp / e.maxHp, team);
+    unitBar(px, py + ly + bob - h - 6 * dpr, Math.max(r * 1.5, 20 * dpr), e.hp / e.maxHp, team);
   }
 }
+
+const p_walk = (t: number, id: number) => Math.sin(t * 10 + id * 1.7);
 
 /** where the health bar sits above each sprite, in body radii */
 const BAR_AT: Record<string, number> = {
@@ -959,9 +1019,16 @@ function drawGhost(game: GameState, ui: UiState) {
       ctx.setLineDash([]);
     }
     ctx.globalAlpha = ok ? 0.65 : 0.4;
-    const art = cardArt(def.id);
-    const s = L((def.radius ?? 500) * 4.2);
-    ctx.drawImage(art, x - s / 2, y - s * 0.9, s, s);
+    const fr = spriteFor(def.id, "back", 1, BLUE);
+    if (fr) {
+      const hh = L((def.radius ?? 500) * VIS) * (SPRITE_HEIGHT[def.id] ?? 2.6);
+      const kk = hh / (fr.canvas.height - fr.pad * 2);
+      ctx.drawImage(fr.canvas, x - (fr.canvas.width * kk) / 2, y - fr.canvas.height * kk + fr.pad * kk, fr.canvas.width * kk, fr.canvas.height * kk);
+    } else {
+      const art = cardArt(def.id);
+      const s = L((def.radius ?? 500) * 4.2);
+      ctx.drawImage(art, x - s / 2, y - s * 0.9, s, s);
+    }
     if (!ok) {
       ctx.globalAlpha = 0.9;
       ctx.strokeStyle = "#ff5b4f";
