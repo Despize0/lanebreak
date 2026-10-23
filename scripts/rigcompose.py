@@ -26,14 +26,46 @@ def load(d, name, segs=()):
     return im
 
 
+def poly_mask(shape, poly):
+    m = np.zeros(shape[:2], np.uint8)
+    cv2.fillPoly(m, [np.array(poly, np.int32)], 1)
+    return m > 0
+
+
 def body_img(d, u):
+    """The body with erased regions removed, limbs cut out ("cut" parts), and the gap behind
+    each cut limb filled in (inpainted) so nothing shows through when the limb moves."""
     s = SPEC[u]
-    im = np.asarray(load(d, s["body"])).copy()
-    for poly in s["erase"]:
-        m = np.zeros(im.shape[:2], np.uint8)
-        cv2.fillPoly(m, [np.array(poly, np.int32)], 1)
-        im[..., 3][m > 0] = 0
+    src = np.asarray(load(d, s["body"])).copy()
+    im = src.copy()
+    for poly in s.get("erase", []):
+        im[..., 3][poly_mask(im.shape, poly)] = 0
+    for q in s["parts"]:
+        if "cut" not in q:
+            continue
+        cutm = poly_mask(im.shape, q["cut"])
+        im[..., 3][cutm] = 0
+        if q.get("fill"):
+            hole = poly_mask(im.shape, q["fill"]) & cutm
+            rgb = cv2.inpaint(np.ascontiguousarray(src[..., :3]), hole.astype(np.uint8) * 255, 4, cv2.INPAINT_TELEA)
+            # darken the filled gap a little: it's in the limb's shadow
+            rgb = (rgb.astype(np.float32) * 0.8).astype(np.uint8)
+            im[..., :3][hole] = rgb[hole]
+            im[..., 3][hole] = 255
     return Image.fromarray(im)
+
+
+def part_img(d, u, q):
+    """(image, pivot in part coords) for a part: a separate painting, or a limb cut from the body."""
+    if "cut" in q:
+        src = np.asarray(load(d, SPEC[u]["body"])).copy()
+        m = poly_mask(src.shape, q["cut"])
+        src[..., 3] = np.where(m, src[..., 3], 0)
+        ys, xs = np.where(src[..., 3] > 0)
+        x0, y0 = xs.min(), ys.min()
+        img = Image.fromarray(src[y0:ys.max() + 1, x0:xs.max() + 1])
+        return img, [q["at"][0] - x0, q["at"][1] - y0]
+    return load(d, q["img"], q.get("eraseSeg", ())), q["pivot"]
 
 
 def place(canvas, off, part, pivot, at, scale, rot):
@@ -57,18 +89,24 @@ def compose(d, u, rots=None):
     off = (M, M)
     parts = sorted(s["parts"], key=lambda q: q["z"])
     for q in [q for q in parts if q["z"] < 0]:
-        place(c, off, load(d, q["img"], q.get("eraseSeg", ())), q["pivot"], q["at"], q["scale"], q.get("rot", 0) + (rots or {}).get(q["name"], 0))
+        im, pv = part_img(d, u, q)
+        place(c, off, im, pv, q["at"], q.get("scale", 1), q.get("rot", 0) + (rots or {}).get(q["name"], 0))
     c.alpha_composite(body, off)
     for q in [q for q in parts if q["z"] >= 0]:
-        place(c, off, load(d, q["img"], q.get("eraseSeg", ())), q["pivot"], q["at"], q["scale"], q.get("rot", 0) + (rots or {}).get(q["name"], 0))
+        im, pv = part_img(d, u, q)
+        place(c, off, im, pv, q["at"], q.get("scale", 1), q.get("rot", 0) + (rots or {}).get(q["name"], 0))
     bb = c.getbbox()
     return c.crop(bb)
 
 
 def preview(d, out, only=None):
     units = [only] if only else list(SPEC)
-    TEST = {"warden": [{}, {"arm": -1.0}, {"arm": 1.2}], "ranger": [{}, {"bow": -0.5}, {"pull": 0.6}],
-            "colossus": [{}, {"armL": -1.8, "armR": 1.8}, {"armL": 0.6}], "skywing": [{}, {"wingL": 0.5, "wingR": -0.4}, {"wingL": -0.4, "wingR": 0.3}]}
+    TEST = {"ironhide": [{}, {"armL": -0.7, "armR": 0.6}, {"armL": 0.3, "armR": -0.3}],
+            "brute": [{}, {"armL": -0.7, "armR": 0.6}, {"armL": 0.35, "armR": -0.3}],
+            "sparkcaster": [{}, {"staff": -0.6}, {"staff": 0.5}],
+            "bombardier": [{}, {"bomb": -1.2}, {"bomb": 0.7}],
+            **{"warden": [{}, {"arm": -1.0}, {"arm": 1.2}], "ranger": [{}, {"bow": -0.5}, {"pull": 0.6}],
+            "colossus": [{}, {"armL": -1.8, "armR": 1.8}, {"armL": 0.6}], "skywing": [{}, {"wingL": 0.5, "wingR": -0.4}, {"wingL": -0.4, "wingR": 0.3}]}}
     rows = []
     for u in units:
         ims = [compose(d, u, r) for r in TEST[u]]
@@ -97,16 +135,18 @@ def export(d):
         body.resize((bw, bh), Image.LANCZOS).save(f"assets/rig2/{u}_body.webp", "WEBP", quality=90, method=6)
         parts = []
         for q in s["parts"]:
-            im = load(d, q["img"], q.get("eraseSeg", ()))
-            pk = k * q["scale"]
+            im, pv0 = part_img(d, u, q)
+            pk = k * q.get("scale", 1)
             pw, ph = max(1, round(im.width * pk)), max(1, round(im.height * pk))
             im.resize((pw, ph), Image.LANCZOS).save(f"assets/rig2/{u}_{q['name']}.webp", "WEBP", quality=90, method=6)
             parts.append({
                 "name": q["name"], "z": q["z"], "rot": q.get("rot", 0),
-                "pivot": [round(q["pivot"][0] * pk, 1), round(q["pivot"][1] * pk, 1)],
+                "pivot": [round(pv0[0] * pk, 1), round(pv0[1] * pk, 1)],
                 "at": [round((q["at"][0] - bb[0]) * k, 1), round((q["at"][1] - bb[1]) * k, 1)],
                 "w": pw, "h": ph,
-                "pts": {n: [round(v[0] * pk, 1), round(v[1] * pk, 1)] for n, v in q.get("pts", {}).items()},
+                # pts of a cut limb are given in body coords; separate parts use their own coords
+                "pts": {n: [round((v[0] - (q["at"][0] - pv0[0] if "cut" in q else 0)) * pk, 1),
+                            round((v[1] - (q["at"][1] - pv0[1] if "cut" in q else 0)) * pk, 1)] for n, v in q.get("pts", {}).items()},
             })
         a = np.asarray(body.resize((bw, bh)))[..., 3].astype(np.float32)
         low = a[int(bh * 0.85):]

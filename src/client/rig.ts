@@ -75,11 +75,7 @@ export const BOWS: Record<string, Partial<Record<View, BowRig>>> = {
   },
   twinrangers: {
     front: { top: [95, 30], bot: [86, 103], hand: [48, 66], aim: [112, 58] },
-    back: { top: [95, 30], bot: [86, 103], hand: [48, 66], aim: [112, 58] },
     side: { top: [96, 30], bot: [88, 74], hand: [55, 64], aim: [92, 58] },
-  },
-  twinrangersp: {
-    front: { top: [104, 32], bot: [93, 108], hand: [50, 68], aim: [118, 58] },
   },
 };
 /** Heavy hitters that wind up and slam (body motion + ground shockwave). */

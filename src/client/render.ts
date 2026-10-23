@@ -985,23 +985,57 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
       // the drawing hand holds the string
       const hold: [number, number] = windup > 0.02 ? N : [nk[0] - dir[0] * reach * 0.15, nk[1] - dir[1] * reach * 0.15];
       R.drawPart(pull, aim, hold);
-    } else if (sk === "colossus") {
+    } else if (sk === "colossus" || sk === "ironhide" || sk === "brute") {
+      // arms: swing while walking, rise on the wind-up, slam down on the hit
+      // (Ironhide/Brute arms are cut from one painting, so they move less to hide the seams)
+      const up = sk === "colossus" ? 1.8 : 0.6;
       const armL = part("armL");
       const armR = part("armR");
-      let aL = sw * 0.22 - 1.8 * windup;
-      let aR = -sw * 0.22 + 1.8 * windup;
+      let aL = sw * 0.18 - up * windup;
+      let aR = -sw * 0.18 + up * 0.9 * windup;
       if (cyc < 0.15) {
         const q = easeOut(cyc / 0.15);
-        aL = -1.8 + 2.2 * q;
-        aR = 1.8 - 2.2 * q;
+        aL = -up + (up + 0.35) * q;
+        aR = up * 0.9 - (up * 0.9 + 0.3) * q;
       } else if (cyc < 0.4) {
         const q = (cyc - 0.15) / 0.25;
-        aL = 0.4 * (1 - q);
-        aR = -0.4 * (1 - q);
+        aL = 0.35 * (1 - q);
+        aR = -0.3 * (1 - q);
       }
       R.drawPart(armR, aR);
       R.drawBody();
       R.drawPart(armL, aL);
+    } else if (sk === "sparkcaster") {
+      // staff: raised and charging during the wind-up, thrust forward on the cast
+      const staff = part("staff");
+      let a = -0.5 * windup + sw * 0.06;
+      if (cyc < 0.12) a = -0.5 + 0.95 * easeOut(cyc / 0.12);
+      else if (cyc < 0.4) a = 0.45 * (1 - easeInOut((cyc - 0.12) / 0.28));
+      R.drawBody();
+      R.drawPart(staff, a);
+      const glow = Math.max(windup, cyc < 0.25 ? 1 - cyc / 0.25 : 0);
+      if (glow > 0.05 && staff.pts.tip) {
+        const [gx, gy] = R.partPt(staff, staff.pts.tip, a);
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        const gr = ctx.createRadialGradient(gx, gy, 0, gx, gy, 26 * k2 * (0.6 + glow));
+        gr.addColorStop(0, `rgba(190,240,255,${0.9 * glow})`);
+        gr.addColorStop(0.4, `rgba(80,180,255,${0.5 * glow})`);
+        gr.addColorStop(1, "rgba(40,120,255,0)");
+        ctx.fillStyle = gr;
+        ctx.beginPath();
+        ctx.arc(gx, gy, 26 * k2 * (0.6 + glow), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    } else if (sk === "bombardier") {
+      // wind the bomb back, then hurl it forward
+      const bombP = part("bomb");
+      let a = -1.0 * windup + sw * 0.1;
+      if (cyc < 0.12) a = -1.0 + 1.7 * easeOut(cyc / 0.12);
+      else if (cyc < 0.4) a = 0.7 * (1 - easeInOut((cyc - 0.12) / 0.28));
+      R.drawBody();
+      R.drawPart(bombP, a);
     } else {
       // skywing: wings beat around the shoulders (faster while breathing fire)
       const beat = Math.sin(t * (windup > 0 || cyc < 0.4 ? 13 : 8) + e.id);
@@ -1215,7 +1249,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
 }
 
 /** Units still drawn from walk/attack frames; everyone else uses the sharper painted views + procedural motion. */
-const FRAME_ANIM = new Set(["swarmlings"]);
+const FRAME_ANIM = new Set<string>([]);
 
 const p_walk = (t: number, id: number) => Math.sin(t * 10 + id * 1.7);
 const smoothstep = (a: number, b: number, x: number) => {

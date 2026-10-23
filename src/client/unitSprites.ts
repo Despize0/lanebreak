@@ -25,6 +25,7 @@ import skywing_side from "../../assets/units/skywing_side.webp";
 import sparkcaster_back from "../../assets/units/sparkcaster_back.webp";
 import sparkcaster_front from "../../assets/units/sparkcaster_front.webp";
 import sparkcaster_side from "../../assets/units/sparkcaster_side.webp";
+import swarmlings_back from "../../assets/units/swarmlings_back.webp";
 import swarmlings_front from "../../assets/units/swarmlings_front.webp";
 import swarmlings_side from "../../assets/units/swarmlings_side.webp";
 import twinrangers_back from "../../assets/units/twinrangers_back.webp";
@@ -51,7 +52,7 @@ export const UNIT_SPRITES: Record<string, Partial<Record<View, string>>> = {
   skyrider: { back: skyrider_back, front: skyrider_front, side: skyrider_side },
   skywing: { back: skywing_back, front: skywing_front, side: skywing_side },
   sparkcaster: { back: sparkcaster_back, front: sparkcaster_front, side: sparkcaster_side },
-  swarmlings: { front: swarmlings_front, side: swarmlings_side },
+  swarmlings: { back: swarmlings_back, front: swarmlings_front, side: swarmlings_side },
   twinrangers: { back: twinrangers_back, front: twinrangers_front, side: twinrangers_side },
   twinrangersp: { front: twinrangersp_front },
   warden: { back: warden_back, front: warden_front, side: warden_side },

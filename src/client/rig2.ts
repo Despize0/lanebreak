@@ -27,7 +27,9 @@ export function rigFor(unit: string): Rig2 | null {
 }
 
 /** Body height relative to the unit's normal sprite height (wings/weapons stick out beyond it). */
-export const RIG2_HEIGHT: Record<string, number> = { warden: 0.92, ranger: 0.95, colossus: 1.0, skywing: 0.62 };
+export const RIG2_HEIGHT: Record<string, number> = {
+  warden: 0.92, ranger: 0.95, colossus: 1.0, skywing: 0.62, ironhide: 1.0, brute: 0.98, sparkcaster: 0.95, bombardier: 0.92,
+};
 
 export interface RigPose {
   angles: Record<string, number>; // extra rotation per part (radians, clockwise)
