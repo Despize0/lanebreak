@@ -371,7 +371,7 @@ test("custom decks and tower skins: used in the match, saved, junk rejected", as
   assert.deepEqual(A.c.start!.decks[A.c.me], deckA);
   assert.equal(A.c.start!.players[A.c.me].skin, "colossus", "tower skin reaches both players");
   assert.equal(B.c.start!.players[A.c.me].skin, "colossus");
-  assert.equal(A.c.start!.players[B.c.me].skin, "classic", "unknown skins fall back to the castle");
+  assert.equal(A.c.start!.players[B.c.me].skin, "warden", "unknown skins fall back to the default style");
   assert.deepEqual(A.c.start!.decks[B.c.me].slice().sort(), ["brute", "bulwark", "ember", "ironhide", "ranger", "skywing", "sparkcaster", "swarmlings"]);
   // every card A played came from A's deck
   const rec = (await get(`/api/matches/${A.c.code}`)).body;

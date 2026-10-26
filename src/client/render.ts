@@ -624,7 +624,7 @@ function drawEntity(e: Entity, x: number, y: number, ui: UiState, now: number, t
       const bh = (bw * base.naturalHeight) / base.naturalWidth * 0.8;
       ctx.drawImage(base, px - bw / 2, py + r * 0.55 - bh * 0.8, bw, bh);
     }
-    const skinImg = e.card === "king" ? null : towerImage(ui.skins?.[e.owner] ?? "classic");
+    const skinImg = e.card === "king" ? null : towerImage(ui.skins?.[e.owner] ?? "warden");
     const kImg = e.card === "king" ? kingImage(team === BLUE) : null;
     if (kImg) {
       // floating-island keep: hovers gently; dozes (zZ) until it wakes up

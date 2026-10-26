@@ -46,6 +46,8 @@ export interface PlayerInfo {
   skin?: TowerSkin; // side-tower look this player picked
 }
 
-export const TOWER_SKINS = ["classic", "ironhide", "colossus", "warden", "ranger"] as const;
+export const TOWER_SKINS = ["warden", "ironhide", "colossus", "ranger"] as const;
+/** Tower style for anyone who hasn't picked one (or sent an unknown one). */
+export const DEFAULT_SKIN = "warden";
 export type TowerSkin = (typeof TOWER_SKINS)[number];
 export const isTowerSkin = (v: unknown): v is TowerSkin => typeof v === "string" && (TOWER_SKINS as readonly string[]).includes(v);

@@ -53,7 +53,7 @@ let decks: [string[], string[]] = [DEFAULT_DECK, DEFAULT_DECK];
 let diff: Diff = "normal";
 let running = false;
 let ranked = false;
-let skins: [string, string] = ["classic", "classic"];
+let skins: [string, string] = ["warden", "warden"];
 let players: [PlayerInfo, PlayerInfo] | null = null;
 let acc = 0;
 let lastT = 0;
@@ -485,7 +485,7 @@ function onServer(m: ServerMsg) {
       me = m.you;
       ranked = m.ranked;
       players = m.players;
-      skins = [m.players[0].skin ?? "classic", m.players[1].skin ?? "classic"];
+      skins = [m.players[0].skin ?? "warden", m.players[1].skin ?? "warden"];
       setPerspective(me);
       session = { code: m.code, token: m.token };
       try { sessionStorage.setItem(`lb:${m.code}`, m.token); } catch {}

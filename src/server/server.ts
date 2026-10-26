@@ -14,7 +14,7 @@ import {
 } from "../sim/sim";
 import { CARDS, DEFAULT_DECK, isValidDeck } from "../sim/cards";
 import { MAX_MSG_BYTES, type ClientMsg, type LogEntry, type ServerMsg, type WireInput } from "../net/protocol";
-import { PLACEMENT_GAMES, isTowerSkin, tierFor, type PlayerInfo, type PublicUser, type TowerSkin } from "../net/tiers";
+import { DEFAULT_SKIN, PLACEMENT_GAMES, isTowerSkin, tierFor, type PlayerInfo, type PublicUser, type TowerSkin } from "../net/tiers";
 import { makeStore, type MatchRow, type RatingUpdate, type User } from "./store";
 import { decay, rate, type Rating } from "./glicko";
 import {
@@ -740,7 +740,7 @@ const wss = new WebSocketServer({ server: http, path: "/ws", maxPayload: MAX_MSG
 wss.on("connection", (ws) => {
   const conn: Conn = {
     id: nextConnId++, ws, room: null, player: null, tokens: RATE_CAPACITY, lastRefill: Date.now(),
-    queued: null, queuedAt: 0, user: null, guestName: `Guest${randomInt(1000, 10000)}`, deck: [...DEFAULT_DECK], skin: "classic",
+    queued: null, queuedAt: 0, user: null, guestName: `Guest${randomInt(1000, 10000)}`, deck: [...DEFAULT_DECK], skin: DEFAULT_SKIN,
     chain: Promise.resolve(),
   };
   const live = ws as WebSocket & { _lbAlive?: boolean };

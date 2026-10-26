@@ -3,7 +3,7 @@
 import { CARD_LIST, CARDS, DEFAULT_DECK, DECK_SIZE, isValidDeck, type CardDef } from "../sim/cards";
 import { PORTRAITS, cardType } from "./portraits";
 import { TOWER_ART, TOWER_NAMES, TOWER_SKINS, type TowerSkin } from "./towerSkins";
-import { isTowerSkin } from "../net/tiers";
+import { DEFAULT_SKIN, isTowerSkin } from "../net/tiers";
 import { getToken, getUser, onAccountChange } from "./account";
 import { sfx } from "./audio";
 
@@ -34,7 +34,7 @@ function loadSkin(): TowerSkin {
     const v = localStorage.getItem(SKIN_KEY);
     if (isTowerSkin(v)) return v;
   } catch {}
-  return "classic";
+  return DEFAULT_SKIN;
 }
 export const getSkin = () => skin;
 
@@ -42,7 +42,7 @@ function renderSkins() {
   $("skinRow").innerHTML = TOWER_SKINS.map((k) => {
     const art = TOWER_ART[k];
     return `<button type="button" class="skin${draftSkin === k ? " on" : ""}" data-skin="${k}" aria-pressed="${draftSkin === k}" title="${TOWER_NAMES[k]}">
-      ${art ? `<img src="${art}" alt="">` : `<span class="classic" aria-hidden="true"></span>`}<span>${TOWER_NAMES[k]}</span></button>`;
+      ${art ? `<img src="${art}" alt="">` : ""}<span>${TOWER_NAMES[k]}</span></button>`;
   }).join("");
 }
 
