@@ -36,3 +36,5 @@ export function kingImage(blue: boolean): HTMLImageElement | null {
   const img = kings.get(blue ? "blue" : "red");
   return img && img.complete && img.naturalWidth > 0 ? img : null;
 }
+
+export const KING_ART = { blue: king_blue, red: king_red };

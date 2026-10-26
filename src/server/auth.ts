@@ -38,7 +38,7 @@ export async function burnTime(pw: string) {
 export const newSessionToken = () => randomBytes(32).toString("base64url");
 export const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
-const RESERVED = new Set(["admin", "administrator", "mod", "moderator", "system", "server", "bot", "guest", "rival", "lanebreak", "support", "you", "null", "undefined"]);
+const RESERVED = new Set(["admin", "administrator", "mod", "moderator", "system", "server", "bot", "guest", "rival", "lanebreak", "warwagers", "support", "you", "null", "undefined"]);
 
 export function checkUsername(name: unknown): string | null {
   if (typeof name !== "string") return "Pick a username";

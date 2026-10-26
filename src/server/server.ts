@@ -773,7 +773,7 @@ setInterval(() => {
 store
   .init()
   .then(() => {
-    http.listen(PORT, () => log(`Lanebreak server on :${PORT} (database: ${store.kind})`));
+    http.listen(PORT, () => log(`War Wagers server on :${PORT} (database: ${store.kind})`));
     if (store.kind === "memory" && process.env.RAILWAY_ENVIRONMENT) {
       log("WARNING: no DATABASE_URL set. Accounts and ratings will be lost on every restart.");
     }

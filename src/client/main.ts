@@ -4,8 +4,7 @@
 //    server's frames through the same deterministic sim and only ever sends "play card X at (x,y)".
 
 import { Bot } from "../ai/bot";
-import { CARD_LIST, CARDS, DEFAULT_DECK } from "../sim/cards";
-import { Rng } from "../sim/rng";
+import { CARDS, DEFAULT_DECK } from "../sim/cards";
 import {
   DOUBLE_ELIXIR_AT, ELIXIR_UNIT, OVERTIME_TICKS, REGULATION_TICKS, TICK_RATE, canDeployAt, createGame, hashState, replay, step,
   type GameState, type Input, type PlayerId,
@@ -13,11 +12,11 @@ import {
 import type { ClientMsg, LogEntry, ServerMsg } from "../net/protocol";
 import type { PlayerInfo } from "../net/tiers";
 import { draw, observe, resetFx, resize, setPerspective, toWorld, type Mark } from "./render";
-import { setPortrait } from "./portraits";
+import { PORTRAITS, setPortrait } from "./portraits";
 import { isMuted, setMuted, sfx, unlockAudio } from "./audio";
 import { getToken, getUser, initAccount, onAccountChange, openAuth, refreshMe, setUser, tierColor } from "./account";
 import { getDeck, getSkin, initDeck } from "./deck";
-import { TOWER_SKINS } from "./towerSkins";
+import { KING_ART, TOWER_SKINS } from "./towerSkins";
 
 declare const __ONLINE__: boolean;
 
@@ -36,9 +35,11 @@ const canvas = $<HTMLCanvasElement>("arena");
 const stage = $("stage");
 const handEl = $("hand");
 
-const screens = ["startScreen", "authScreen", "boardScreen", "deckScreen", "waitScreen", "endScreen"];
+const screens = ["startScreen", "friendScreen", "practiceScreen", "authScreen", "boardScreen", "deckScreen", "waitScreen", "endScreen"];
 function show(id: string | null) {
   for (const s of screens) $(s).hidden = s !== id;
+  // menus are their own full screen: no scoreboard or card tray behind them
+  $("app").classList.toggle("in-menu", id !== null && id !== "endScreen");
 }
 
 // ------------------------------------------------------------------ state
@@ -681,7 +682,11 @@ renderMute();
 document.querySelectorAll<HTMLButtonElement>("[data-diff]").forEach((b) =>
   b.addEventListener("click", () => startBot(b.dataset.diff as Diff)),
 );
-$("rankedBtn").addEventListener("click", () => queueMatch(true));
+$("rankedBtn").addEventListener("click", () => (__ONLINE__ ? queueMatch(true) : show("practiceScreen")));
+$("friendBtn").addEventListener("click", () => show("friendScreen"));
+$("practiceBtn").addEventListener("click", () => show("practiceScreen"));
+$("friendBack").addEventListener("click", () => show("startScreen"));
+$("practiceBack").addEventListener("click", () => show("startScreen"));
 $("findMatch").addEventListener("click", () => queueMatch(false));
 $("playFriend").addEventListener("click", playFriend);
 $("joinForm").addEventListener("submit", (e) => {
@@ -723,6 +728,7 @@ if (!__ONLINE__) {
   $("onlineGroup").hidden = true;
   $("signInBtn").hidden = true;
   $("boardBtn").hidden = true;
+  $("rankedBtn").querySelector("small")!.textContent = "Practice vs bot";
   $("diffNormal").classList.add("primary");
 } else {
   void refreshMe();
@@ -730,36 +736,13 @@ if (!__ONLINE__) {
   if (room) joinCode(room);
 }
 
-// a live demo behind the menu: two bots playing
+// home screen art: the keep and a fan of cards
 {
-  const demoBots = [new Bot(0, { seed: 3, thinkEvery: 14 }), new Bot(1, { seed: 4, thinkEvery: 14 })];
-  const demoRng = new Rng(5);
-  const demoDecks = (): [string[], string[]] => [demoRng.shuffle([...CARD_LIST]).slice(0, 8), demoRng.shuffle([...CARD_LIST]).slice(0, 8)];
-  game = createGame(77, demoDecks());
+  const root = document.documentElement.style;
+  root.setProperty("--art-king", `url(${KING_ART.blue})`);
+  const fan = ["warden", "skywing", "colossus"];
+  fan.forEach((id, i) => root.setProperty(`--art-${i + 1}`, `url(${PORTRAITS[id]})`));
   skins = ["warden", "ironhide"];
-  resetFx(game);
-  let demoAcc = 0;
-  let demoLast = performance.now();
-  const demo = () => {
-    if (mode !== "menu" || running) return;
-    const now = performance.now();
-    demoAcc += Math.min(250, now - demoLast);
-    demoLast = now;
-    while (demoAcc >= TICK_MS) {
-      demoAcc -= TICK_MS;
-      if (game.phase === "over") {
-        game = createGame((Math.random() * 1e9) >>> 0, demoDecks());
-        skins = [TOWER_SKINS[(Math.random() * 5) | 0], TOWER_SKINS[(Math.random() * 5) | 0]];
-        resetFx(game);
-      }
-      const ins = demoBots.map((b) => b.decide(game)).filter((x): x is Input => !!x);
-      snapshotPositions();
-      step(game, ins);
-      observeQuiet();
-    }
-  };
-  const observeQuiet = () => observe(game, performance.now(), true); // visuals only, no sound
-  setInterval(demo, 30);
 }
 
 resize(stage);
