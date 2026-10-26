@@ -736,6 +736,19 @@ if (!__ONLINE__) {
   if (room) joinCode(room);
 }
 
+// iPhone: no pinch or double-tap zoom (Safari ignores user-scalable=no for pinches)
+for (const ev of ["gesturestart", "gesturechange"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+{
+  let lastTouch = 0;
+  document.addEventListener("touchend", (e) => {
+    const now = e.timeStamp;
+    const t = e.target as HTMLElement;
+    // a quick second tap on empty space would zoom; taps on controls stay normal clicks
+    if (now - lastTouch < 300 && !t.closest("button, input, a, canvas, .dcard, .card")) e.preventDefault();
+    lastTouch = now;
+  }, { passive: false });
+}
+
 // home screen art: the keep and a fan of cards
 {
   const root = document.documentElement.style;

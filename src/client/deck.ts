@@ -100,7 +100,7 @@ function cardTile(id: string, inDeck: boolean): string {
 function render() {
   const slots = $("deckSlots");
   slots.innerHTML = Array.from({ length: DECK_SIZE }, (_, i) =>
-    draft[i] ? cardTile(draft[i], true) : `<div class="dcard empty" aria-hidden="true"><span class="nm">Empty</span></div>`,
+    draft[i] ? cardTile(draft[i], true) : `<div class="dcard empty" data-slot="${i}" aria-hidden="true"><span class="nm">Empty</span></div>`,
   ).join("");
   $("deckPool").innerHTML = CARD_LIST.filter((c) => !draft.includes(c)).map((c) => cardTile(c, false)).join("");
   $("deckAvg").textContent = draft.length ? `Average cost ${avg(draft).toFixed(1)}` : "Pick 8 cards";
@@ -128,6 +128,7 @@ export function initDeck(showScreen: (id: string | null) => void, showToast: (m:
   show = showScreen;
   toast = showToast;
   const onClick = (e: Event) => {
+    if (dragJustEnded) return; // the click that ends a drag isn't a tap
     const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-card]");
     if (!btn) return;
     const id = btn.dataset.card!;
@@ -142,6 +143,7 @@ export function initDeck(showScreen: (id: string | null) => void, showToast: (m:
   };
   $("deckSlots").addEventListener("click", onClick);
   $("deckPool").addEventListener("click", onClick);
+  initDrag();
   $("deckBtn").addEventListener("click", openDeck);
   $("deckBack").addEventListener("click", () => show("startScreen"));
   $("deckReset").addEventListener("click", () => {
@@ -176,5 +178,98 @@ export function initDeck(showScreen: (id: string | null) => void, showToast: (m:
     } else if (u && !u.deck) {
       void persist(deck); // first sign-in on this device: upload the local deck
     }
+  });
+}
+
+// ------------------------------------------------------------------ drag and drop
+// Pointer-based (works with touch on iPhone, where HTML drag-and-drop doesn't):
+//  - collection card onto a deck card: swap them; onto an empty slot: add it
+//  - deck card onto another deck card: reorder; onto the collection: remove it
+let dragJustEnded = false;
+
+function initDrag() {
+  const screen = $("deckScreen");
+  let start: { id: string; fromDeck: boolean; x: number; y: number; el: HTMLElement; pid: number } | null = null;
+  let ghost: HTMLElement | null = null;
+  let over: HTMLElement | null = null;
+
+  const target = (x: number, y: number) => {
+    const el = document.elementFromPoint(x, y) as HTMLElement | null;
+    if (!el) return null;
+    return el.closest<HTMLElement>("#deckSlots .dcard") ?? el.closest<HTMLElement>("#deckPool");
+  };
+  const setOver = (el: HTMLElement | null) => {
+    if (over === el) return;
+    over?.classList.remove("drop");
+    over = el;
+    over?.classList.add("drop");
+  };
+  const end = () => {
+    ghost?.remove();
+    ghost = null;
+    start?.el.classList.remove("lifted");
+    setOver(null);
+    start = null;
+  };
+
+  screen.addEventListener("pointerdown", (e) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>(".dcard[data-card]");
+    if (!el || e.button > 0) return;
+    start = { id: el.dataset.card!, fromDeck: !!el.closest("#deckSlots"), x: e.clientX, y: e.clientY, el, pid: e.pointerId };
+  });
+  screen.addEventListener("pointermove", (e) => {
+    if (!start || e.pointerId !== start.pid) return;
+    if (!ghost) {
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 8) return;
+      // lift the card: a copy follows the finger
+      const r = start.el.getBoundingClientRect();
+      ghost = start.el.cloneNode(true) as HTMLElement;
+      ghost.classList.add("ghost");
+      ghost.style.width = `${r.width}px`;
+      ghost.style.height = `${r.height}px`;
+      document.body.appendChild(ghost);
+      start.el.classList.add("lifted");
+      try { start.el.setPointerCapture(e.pointerId); } catch {}
+    }
+    e.preventDefault();
+    ghost.style.left = `${e.clientX}px`;
+    ghost.style.top = `${e.clientY}px`;
+    const t = target(e.clientX, e.clientY);
+    // only highlight places where the drop would do something
+    if (t && t.id === "deckPool" && !start.fromDeck) setOver(null);
+    else if (t && t.dataset.card === start.id) setOver(null);
+    else setOver(t);
+  });
+  const finish = (e: PointerEvent) => {
+    if (!start || e.pointerId !== start.pid) return;
+    if (!ghost) return end(); // never moved: it's a tap, the click handler deals with it
+    const t = over;
+    const { id, fromDeck } = start;
+    end();
+    dragJustEnded = true;
+    setTimeout(() => (dragJustEnded = false), 0);
+    if (!t) return;
+    if (t.id === "deckPool") {
+      if (fromDeck) draft = draft.filter((c) => c !== id);
+    } else {
+      const slotCard = t.dataset.card;
+      const slotIdx = slotCard ? draft.indexOf(slotCard) : Number(t.dataset.slot);
+      if (fromDeck) {
+        const from = draft.indexOf(id);
+        if (slotCard) [draft[from], draft[slotIdx]] = [draft[slotIdx], draft[from]];
+        else {
+          draft.splice(from, 1);
+          draft.push(id);
+        }
+      } else if (slotCard) draft[slotIdx] = id; // the replaced card goes back to the collection
+      else if (draft.length < DECK_SIZE) draft.push(id);
+    }
+    focus = id;
+    sfx.select();
+    render();
+  };
+  screen.addEventListener("pointerup", finish);
+  screen.addEventListener("pointercancel", (e) => {
+    if (start && e.pointerId === start.pid) end();
   });
 }

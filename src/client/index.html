@@ -25,6 +25,7 @@
 }
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { background: radial-gradient(120% 70% at 50% 0%, #2a3a7a 0%, var(--night) 70%); background-color: var(--night); color: var(--text); font-family: var(--font-ui); overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 button, input { font-family: inherit; }
 #app {
@@ -180,6 +181,11 @@ input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
 .dcard .nm { position: relative; z-index: 1; font-family: var(--font-display); font-size: 11px; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-shadow: 0 1px 0 #0b0f22; }
 .dcard .cost { position: absolute; top: 1px; left: 1px; z-index: 2; width: 25px; height: 25px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e3a6ff, var(--aether) 60%, #6a2aa8); border: 2px solid #f4e9ff; box-sizing: border-box; font-family: var(--font-display); font-size: 11px; display: grid; place-items: center; color: #fff; }
 .dcard.in { box-shadow: 0 0 0 2px var(--gold); }
+.dcard[data-card] { touch-action: none; }
+.dcard.lifted { opacity: .35; }
+.dcard.drop { outline: 3px solid #fff; outline-offset: 1px; transform: scale(1.05); }
+#deckPool.drop { outline: 2px dashed var(--gold); outline-offset: 4px; border-radius: 10px; }
+.dcard.ghost { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -60%) rotate(-4deg) scale(1.08); box-shadow: 0 14px 28px rgba(0,0,0,.5); margin: 0; }
 .dcard.focus { outline: 2px solid #fff; outline-offset: 1px; }
 .dcard.empty { border-style: dashed; border-color: #4b5a99; background: transparent; color: var(--muted); cursor: default; justify-content: center; }
 .dcard.empty::after { display: none; }
@@ -355,7 +361,7 @@ input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
         </div>
         <div class="label">Tower style</div>
         <div class="skins" id="skinRow"></div>
-        <div class="label">Tap cards to swap them in and out</div>
+        <div class="label">Drag cards into your deck, or tap to swap</div>
         <div class="deck-grid" id="deckPool"></div>
         <div class="btns">
           <button class="btn ghost" id="deckBack" type="button">Back</button>

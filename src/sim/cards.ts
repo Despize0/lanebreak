@@ -110,7 +110,7 @@ export const CARDS: Record<string, CardDef> = {
   },
   colossus: {
     id: "colossus", name: "Colossus", short: "CO", cost: 7, kind: "troop",
-    hp: 4800, damage: 260, hitTicks: 36, range: 1200, sight: 7000, speed: 35, radius: 900,
+    hp: 4000, damage: 210, hitTicks: 36, range: 1200, sight: 7000, speed: 28, radius: 900,
     targets: "buildings",
     description: "Enormous crystal giant. Very slow; smashes towers but can be swarmed down.",
   },
